@@ -1,0 +1,60 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: container-image-mirror
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.38.0"
+    tekton.dev/categories: Container
+    tekton.dev/tags: container
+    tekton.dev/displayName: "container image mirror"
+    tekton.dev/platforms: "linux/amd64,linux/s390x,linux/ppc64le,linux/arm64"
+spec:
+  description: >-
+    This task is to mirror the image from one repository to other
+  workspaces:
+    - name: output
+      description: The git repo will be cloned onto the volume backing this Workspace.
+  params:
+    - name: src-image
+      description: Repository URL to clone from.
+      type: string
+    - name: src-image-digest
+      description: Revision to checkout. (branch, tag, sha, ref, etc...)
+      type: string
+      default: ""
+    - name: dest-repo
+      description: Refspec to fetch before checking out revision.
+      default: ""
+    - default: quay.io/redhat-appstudio/buildah:v1.31.0@sha256:34f12c7b72ec2c28f1ded0c494b428df4791c909f1f174dd21b8ed6a57cf5ddb
+      description: The location of the buildah builder image.
+      name: BUILDER_IMAGE
+      type: string
+  results:
+    - name: DEST_IMAGE_PATH
+      description: The precise commit SHA that was fetched by this Task.
+    - name: DEST_IMAGE_DIGEST
+      description: The precise URL that was fetched by this Task.
+  steps:
+    - name: mirror
+      image: "$(params.BUILDER_IMAGE)"
+      env:
+      - name: SRC_IMAGE
+        value: $(params.src-image)
+      - name: SRC_IMAGE_DIGEST
+        value: $(params.src-image-digest)
+      - name: DEST_REPO
+        value: $(params.dest-repo)
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+        imagewithouttag=$(echo $SRC_IMAGE | sed "s/\(.*\):.*/\1/" | tr -d '\n')
+        # strip new-line escape symbol from parameter and save it to variable
+        imageanddigest=$(echo $imagewithouttag@$SRC_IMAGE_DIGEST)
+        echo "imageanddigest=${imageanddigest}"
+        buildah pull ${imageanddigest}
+        buildah images
