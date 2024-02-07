@@ -13,9 +13,6 @@ metadata:
 spec:
   description: >-
     This task is to mirror the image from one repository to other
-  workspaces:
-    - name: output
-      description: The git repo will be cloned onto the volume backing this Workspace.
   params:
     - name: src-image
       description: Repository URL to clone from.
