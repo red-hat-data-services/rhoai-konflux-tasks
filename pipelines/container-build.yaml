@@ -518,6 +518,7 @@ spec:
     - name: ADDITIONAL_TAGS
       value: 
       - $(params.additional-tags[*])
+      - arbitrary-pipeline-change
     runAfter:
     - build-image-index
     taskRef:
