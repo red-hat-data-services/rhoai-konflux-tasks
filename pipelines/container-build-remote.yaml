@@ -165,16 +165,15 @@ spec:
         - name: BUILD_URL
           valueFrom:
             fieldRef:
-              fieldPath: metadata.labels['pipelinesascode.tekton.dev/log-url']
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/log-url']
+        - name: SHA_URL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha-url']
         script: |
           echo "pipelinerun-name = $pipelinerun_name"
-
-          application_name=${target_branch/rhoai-/}
-          application_name=rhoai-v${application_name/./-}
-          echo "application-name = $application_name"
-
-          component_name=${pipelinerun_name/-on-*/}
-          echo "component-name = $component_name"
+          echo "build-url = $BUILD_URL"
+          echo "sha-url = $SHA_URL"
 
           build_time="$(date +%Y-%m-%dT%H:%M:%S)"
 
