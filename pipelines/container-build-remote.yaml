@@ -268,6 +268,7 @@ spec:
         value:
         - $(params.build-platforms)
     name: build-images
+    timeout: 4h
     params:
     - name: ADDITIONAL_SECRET
       value: $(params.additional-build-secret)
