@@ -59,10 +59,11 @@ spec:
     description: Path to the source code of an application's component from where to build image.
     name: path-context
     type: string
-  - default: Dockerfile
-    description: Path to the Dockerfile inside the context specified by parameter path-context
-    name: dockerfile
-    type: string
+  - default: 
+    - Dockerfile
+    description: Path to the Dockerfiles inside the context specified by parameter path-context
+    name: dockerfiles
+    type: array
   - default: "false"
     description: Force rebuild image
     name: rebuild
@@ -267,6 +268,9 @@ spec:
       - name: PLATFORM
         value:
         - $(params.build-platforms)
+      - name: DOCKERFILE
+        value:
+        - $(params.dockerfiles)
     name: build-images
     timeout: 4h
     params:
@@ -274,8 +278,6 @@ spec:
       value: $(params.additional-build-secret)
     - name: IMAGE
       value: $(params.output-image)
-    - name: DOCKERFILE
-      value: $(params.dockerfile)
     - name: CONTEXT
       value: $(params.path-context)
     - name: HERMETIC
@@ -560,13 +562,16 @@ spec:
         value: task
       resolver: bundles
   - name: push-dockerfile
+    matrix:
+      params:
+      - name: DOCKERFILE
+        value:
+        - $(params.dockerfiles)
     params:
     - name: IMAGE
       value: $(tasks.build-image-index.results.IMAGE_URL)
     - name: IMAGE_DIGEST
       value: $(tasks.build-image-index.results.IMAGE_DIGEST)
-    - name: DOCKERFILE
-      value: $(params.dockerfile)
     - name: CONTEXT
       value: $(params.path-context)
     - name: SOURCE_ARTIFACT
