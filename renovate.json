@@ -1,10 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>red-hat-data-services/konflux-central//renovate/custom-renovate.json"],
-  "packageRules": [
-    {
-      "matchManagers": ["tekton"],
-      "includePaths": ["pipelines/**"]
-    }
-  ]
+  "tekton": {
+    "fileMatch": ["\\.yaml$", "\\.yml$"], 
+    "includePaths": ["pipelines/**", "tasks/**"], 
+    "automerge": true 
+  }
 }
