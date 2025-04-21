@@ -2,7 +2,8 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "tekton": {
     "fileMatch": ["\\.yaml$", "\\.yml$"], 
-    "includePaths": ["pipelines/**", "tasks/**"], 
+    "includePaths": ["pipelines/**"],
+    "schedule": ["at any time"],,
     "automerge": true 
   }
 }
