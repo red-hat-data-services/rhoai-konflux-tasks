@@ -1,0 +1,4 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["github>red-hat-data-services/renovate-central/renovate/custom-renovate.json"]
+}
