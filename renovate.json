@@ -1,9 +1,10 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabledManagers": ["tekton"],
   "tekton": {
+    "schedule": ["at any time"],
     "fileMatch": ["\\.yaml$", "\\.yml$"], 
-    "includePaths": ["pipelines/**"],
-    "schedule": ["at any time"],,
+    "includePaths": ["pipelineruns/**", "pipelines/**", "tasks/**"], 
     "automerge": true 
   }
 }
