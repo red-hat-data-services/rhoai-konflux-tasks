@@ -113,6 +113,14 @@ spec:
     name: additional-tags
     type: array
     default: []
+  - description: Fetch all tags for the repo
+    name: fetch-git-tags
+    type: string
+    default: "false"
+  - description: Perform a shallow clone, fetching only the most recent N commits
+    name: clone-depth
+    type: string
+    default: "1"
   
   results:
   - description: ""
@@ -142,30 +150,26 @@ spec:
             secretKeyRef:
               name: rhoai-konflux-secret
               key: slack-component-failure-notification
-        - name: pipelinerun_name
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.name
         - name: target_branch
           valueFrom:
             fieldRef:
               fieldPath: metadata.labels['build.appstudio.redhat.com/target_branch']
+        - name: BUILD_URL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/log-url']
+        - name: SHA_URL
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha-url']
         script: |
+          echo "build-url = $BUILD_URL"
+          echo "sha-url = $SHA_URL"
+          pipelinerun_name=$(echo $BUILD_URL | sed 's|http.*/||')
           echo "pipelinerun-name = $pipelinerun_name"
-
-          application_name=${target_branch/rhoai-/}
-          application_name=rhoai-v${application_name/./-}
-          echo "application-name = $application_name"
-
-          component_name=${pipelinerun_name/-on-*/}
-          echo "component-name = $component_name"
-
-          KONFLUX_SERVER="https://konflux.apps.stone-prod-p02.hjvn.p1.openshiftapps.com"
-          build_url="${KONFLUX_SERVER}/application-pipeline/workspaces/rhoai/applications/${application_name}/pipelineruns/${pipelinerun_name}/logs"
-
           build_time="$(date +%Y-%m-%dT%H:%M:%S)"
 
-          slack_message=${slack_message/__BUILD__URL__/$build_url}
+          slack_message=${slack_message/__BUILD__URL__/$BUILD_URL}
           slack_message=${slack_message/__PIPELINERUN__NAME__/$pipelinerun_name}
           slack_message=${slack_message/__BUILD__TIME__/$build_time}
 
@@ -199,6 +203,10 @@ spec:
       value: $(params.output-image).git
     - name: ociArtifactExpiresAfter
       value: $(params.image-expires-after)
+    - name: fetchTags
+      value: $(params.fetch-git-tags)
+    - name: depth
+      value: $(params.clone-depth)
     runAfter:
     - init
     taskRef:
