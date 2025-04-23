@@ -101,6 +101,9 @@ spec:
     value: ./test-build/Dockerfile.konflux
   - name: path-context
     value: .
+  - name: build-platforms
+    value:
+      - linux/amd64
   # - name: prefetch-input
   #   value: |
   #   [{"type": "gomod"}, {"type": "rpm"}]
