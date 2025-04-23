@@ -29,7 +29,7 @@ spec:
     - name: secret-name
       value: rhoai-konflux-secret
     - name: key-name
-      value: slack-webhook 
+      value: slack-webhook
     taskRef:
       params:
       - name: name
