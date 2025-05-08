@@ -7,8 +7,6 @@ spec:
   - name: expected-cluster
     type: string
     default: ""
-  - name: target-branch
-    type: string
   results:
   - description: Notification text to be posted to slack
     name: slack-message-failure-text
