@@ -48,7 +48,7 @@ spec:
       CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
       echo "expected cluster: $EXPECTED_CLUSTER"
       echo "actual cluster: $CLUSTER"
-      if [[ -n "$EXPECTED-CLUSTER" && "$EXPECTED_CLUSTER" == "$CLUSTER" ]]; then
+      if [[ -n "$EXPECTED-CLUSTER" && "$EXPECTED_CLUSTER" != "$CLUSTER" ]]; then
         echo "Build URL does not match expected cluster $CLUSTER."
         echo -n "true" > "$(results.skip-slack-message.path)"
       else
