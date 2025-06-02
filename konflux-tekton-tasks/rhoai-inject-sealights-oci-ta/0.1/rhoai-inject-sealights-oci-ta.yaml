@@ -68,7 +68,7 @@ spec:
         rm /tmp/auth/config.json
       }
 
-      if [[ "$BUILD_TYPE" != 'fbc" && "$BUILD_TYPE" != 'bundle' ]]; then
+      if [[ "$BUILD_TYPE" != 'fbc' && "$BUILD_TYPE" != 'bundle' ]]; then
         echo "Build type '$BUILD_TYPE' did not match fbc or bundle. exiting."
         exit 0
       fi
