@@ -65,7 +65,6 @@ spec:
 
         echo "${SEALIGHTS_IMAGE_REPO}@${SEALIGHTS_IMAGE_DIGEST}"
         rm attestation.json
-        rm /tmp/auth/config.json
       }
 
       if [[ "$BUILD_TYPE" != 'fbc' && "$BUILD_TYPE" != 'bundle' ]]; then
