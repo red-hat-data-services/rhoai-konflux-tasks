@@ -12,9 +12,11 @@ spec:
     description: The OCI repository where the Trusted Artifacts are stored.
     type: string
   - name: sealights-integrated-repos
-    description: names of rhoai quay repos that are integrated with sealights
+    description: array of rhoai quay repo names that are integrated with sealights
+    type: array
   - name: build-type
     description: is this task processing a bundle or an fbc?
+    type: string
     default: ""
   results:
   - description: Modified source code
@@ -27,14 +29,14 @@ spec:
     - $(params.SOURCE_ARTIFACT)=/var/workdir/source
   - image: quay.io/konflux-ci/tekton-integration-catalog/utils:latest
     name: inject-sealights
+    args: ["$(params.sealights-integrated-repos[*])"]
     env:
-    - name: SEALIGHTS_INTEGRATED_REPOS
-      value: $(params.sealights-integrated-repos[*])
     - name: BUILD_TYPE
       value: $(params.build-type)
     script: |
       set -eo pipefail
       cd /var/workdir/source
+      SEALIGHTS_INTEGRATED_REPOS="$@"
 
       function get_sealights_image {
         REAL_QUAY_URI=$1
@@ -58,8 +60,6 @@ spec:
         rm attestation.json
         rm /tmp/auth/config.json
       }
-
-      # SEALIGHTS_INTEGRATED_REPOS=odh-dashboard-rhel9 
 
       if [[ "$BUILD_TYPE" != 'fbc" && "$BUILD_TYPE" != 'bundle' ]]; then
         echo "Build type '$BUILD_TYPE' did not match fbc or bundle. exiting."
