@@ -78,7 +78,7 @@ spec:
 
         ### Find the actual build uri
         if [[ "$BUILD_TYPE" == 'bundle' ]]; then
-          REAL_URI=$(grep "registry\.redhat\.io/rhoai" manifests/rhods-operator.clusterserviceversion.yaml | \
+          REAL_URI=$(grep "registry\.redhat\.io/rhoai" bundle/manifests/rhods-operator.clusterserviceversion.yaml | \
             grep -m 1 "$SEALIGHTS_INTEGRATED_REPO" | grep -E -o 'registry\.redhat\.io/rhoai/.*@sha256:.{64}')
         else
           REAL_URI=$(grep "registry\.redhat\.io/rhoai" catalog/v4.17/rhods-operator/catalog.yaml | \
@@ -97,7 +97,7 @@ spec:
         echo "Replacing all instances of $REAL_URI"
         echo " with $SEALIGHTS_URI"
         if [[ "$BUILD_TYPE" == 'bundle' ]]; then
-          sed -i "s|$REAL_URI|$SEALIGHTS_URI|g" manifests/rhods-operator.clusterserviceversion.yaml
+          sed -i "s|$REAL_URI|$SEALIGHTS_URI|g" bundle/manifests/rhods-operator.clusterserviceversion.yaml
         else
           sed -i "s|$REAL_URI|$SEALIGHTS_URI|g" catalog/catalog-patch.yaml
           sed -i "s|$REAL_URI|$SEALIGHTS_URI|g" catalog/v4.17/rhods-operator/catalog.yaml
