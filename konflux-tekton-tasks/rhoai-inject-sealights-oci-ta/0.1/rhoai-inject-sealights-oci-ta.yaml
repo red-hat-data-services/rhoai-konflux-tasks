@@ -69,19 +69,18 @@ spec:
         echo "Found $REAL_URI"
         echo " -> converting to $REAL_QUAY_URI"
         
-        SEALIGHTS_BUILD_STEP="build-sealights-image-index"
 
         ### Get the attestation info from the actual build URI
         echo "Downloading attestation from $REAL_QUAY_URI"
         cosign download attestation $REAL_QUAY_URI > attestation.json
 
-        echo "Finding build step named $SEALIGHTS_BUILD_STEP in $REAL_QUAY_URI attestations"
+        echo "Finding sealights related build step in $REAL_QUAY_URI attestations"
         SEALIGHTS_BUILD_RESULTS=$(jq '.payload|@base64d|fromjson' attestation.json \
-          | jq -r --arg N "$SEALIGHTS_BUILD_STEP" '.predicate.buildConfig.tasks[] | select(.name == $N)| .results')
+          | jq -r '.predicate.buildConfig.tasks[] | select(.name == "build-sealights-container" || .name == "build-sealights-image-index")| .results')
 
         ### Find the sealights build URI from the attestation
         
-        echo "Finding IMAGE_DIGEST and IMAGE_URL outputs from $SEALIGHTS_BUILD_STEP"
+        echo "Finding IMAGE_DIGEST and IMAGE_URL outputs from sealights build step"
         # this has the form 'sha256:<digest>'
         SEALIGHTS_IMAGE_DIGEST=$(echo $SEALIGHTS_BUILD_RESULTS | jq -r '.[] | select(.name == "IMAGE_DIGEST") | .value' | head -n 1)
 
