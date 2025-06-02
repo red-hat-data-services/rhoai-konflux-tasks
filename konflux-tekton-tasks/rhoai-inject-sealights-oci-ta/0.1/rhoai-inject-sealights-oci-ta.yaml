@@ -76,7 +76,7 @@ spec:
 
         echo "Finding sealights related build step in $REAL_QUAY_URI attestations"
         SEALIGHTS_BUILD_RESULTS=$(jq '.payload|@base64d|fromjson' attestation.json \
-          | jq -r '.predicate.buildConfig.tasks[] | select(.name == "build-sealights-container" || .name == "build-sealights-image-index")| .results')
+          | jq -r '.predicate.buildConfig.tasks[] | select(.name == "build-sealights-container" or .name == "build-sealights-image-index")| .results')
 
         ### Find the sealights build URI from the attestation
         
