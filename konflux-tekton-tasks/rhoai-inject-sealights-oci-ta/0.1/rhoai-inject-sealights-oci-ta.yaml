@@ -45,28 +45,6 @@ spec:
       set -eo pipefail
       SEALIGHTS_INTEGRATED_REPOS="$@"
 
-      function get_sealights_image {
-        REAL_QUAY_URI=$1
-        SEALIGHTS_BUILD_STEP=$2
-
-        ### Get the attestation info from the actual build URI
-        cosign download attestation $REAL_QUAY_URI > attestation.json
-
-        SEALIGHTS_BUILD_RESULTS=$(jq '.payload|@base64d|fromjson' attestation.json \
-          | jq -r --arg N "$SEALIGHTS_BUILD_STEP" '.predicate.buildConfig.tasks[] | select(.name == $N)| .results')
-
-        ### Find the sealights build URI from the attestation
-
-        # this has the form 'sha256:<digest>'
-        SEALIGHTS_IMAGE_DIGEST=$(echo $SEALIGHTS_BUILD_RESULTS | jq -r '.[] | select(.name == "IMAGE_DIGEST") | .value' | head -n 1)
-
-        # using sed to remove the tag, leaving just the repo url
-        SEALIGHTS_IMAGE_REPO=$(echo $SEALIGHTS_BUILD_RESULTS | jq -r '.[] | select(.name == "IMAGE_URL") | .value' | sed 's/:.*//' | head -n 1)
-
-        echo "${SEALIGHTS_IMAGE_REPO}@${SEALIGHTS_IMAGE_DIGEST}"
-        rm attestation.json
-      }
-
       if [[ "$BUILD_TYPE" != 'fbc' && "$BUILD_TYPE" != 'bundle' ]]; then
         echo "Build type '$BUILD_TYPE' did not match fbc or bundle. exiting."
         exit 0
@@ -77,18 +55,45 @@ spec:
 
         ### Find the actual build uri
         if [[ "$BUILD_TYPE" == 'bundle' ]]; then
+          echo "Finding real build in bundle/manifests/rhods-operator.clusterserviceversion.yaml"
           REAL_URI=$(grep "registry\.redhat\.io/rhoai" bundle/manifests/rhods-operator.clusterserviceversion.yaml | \
             grep -m 1 "$SEALIGHTS_INTEGRATED_REPO" | grep -E -o 'registry\.redhat\.io/rhoai/.*@sha256:.{64}')
         else
+          echo "Attempting to find $SEALIGHTS_INTEGRATED_REPO in catalog/v4.17/rhods-operator/catalog.yaml"
+
+          # take the last match to (hopefully) get the most recent graph reference
           REAL_URI=$(grep "registry\.redhat\.io/rhoai" catalog/v4.17/rhods-operator/catalog.yaml | \
-            grep -m 1 "$SEALIGHTS_INTEGRATED_REPO" | grep -E -o 'registry\.redhat\.io/rhoai/.*@sha256:.{64}')
+            grep "$SEALIGHTS_INTEGRATED_REPO" | tail -n 1 | grep -E -o 'registry\.redhat\.io/rhoai/.*@sha256:.{64}')
         fi
         REAL_QUAY_URI=$(echo "$REAL_URI" | sed 's/registry\.redhat\.io/quay.io/')
         echo "Found $REAL_URI"
         echo " -> converting to $REAL_QUAY_URI"
+        
+        SEALIGHTS_BUILD_STEP="build-sealights-image-index"
 
-        SEALIGHTS_QUAY_URI=$(get_sealights_image "$REAL_QUAY_URI" "build-sealights-image-index" | tail -n 1)
+        ### Get the attestation info from the actual build URI
+        echo "Downloading attestation from $REAL_QUAY_URI"
+        cosign download attestation $REAL_QUAY_URI > attestation.json
+
+        echo "Finding build step named $SEALIGHTS_BUILD_STEP in $REAL_QUAY_URI attestations"
+        SEALIGHTS_BUILD_RESULTS=$(jq '.payload|@base64d|fromjson' attestation.json \
+          | jq -r --arg N "$SEALIGHTS_BUILD_STEP" '.predicate.buildConfig.tasks[] | select(.name == $N)| .results')
+
+        ### Find the sealights build URI from the attestation
+        
+        echo "Finding IMAGE_DIGEST and IMAGE_URL outputs from $SEALIGHTS_BUILD_STEP"
+        # this has the form 'sha256:<digest>'
+        SEALIGHTS_IMAGE_DIGEST=$(echo $SEALIGHTS_BUILD_RESULTS | jq -r '.[] | select(.name == "IMAGE_DIGEST") | .value' | head -n 1)
+
+        # using sed to remove the tag, leaving just the repo url
+        SEALIGHTS_IMAGE_REPO=$(echo $SEALIGHTS_BUILD_RESULTS | jq -r '.[] | select(.name == "IMAGE_URL") | .value' | sed 's/:.*//' | head -n 1)
+
+        rm attestation.json
+
+        SEALIGHTS_QUAY_URI="${SEALIGHTS_IMAGE_REPO}@${SEALIGHTS_IMAGE_DIGEST}"
+
         SEALIGHTS_URI=$(echo "$SEALIGHTS_QUAY_URI" | sed 's/quay\.io/registry.redhat.io/')
+
         echo "Found sealights URI $SEALIGHTS_QUAY_URI"
         echo " -> converting to $SEALIGHTS_URI"
 
