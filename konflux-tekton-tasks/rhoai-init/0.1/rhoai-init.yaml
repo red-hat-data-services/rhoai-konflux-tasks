@@ -12,6 +12,8 @@ spec:
     name: slack-message-failure-text
   - description: Skip slack message
     name: skip-slack-message
+  - description: cpe id for the built image
+    name: cpe-id
   steps:
   - image: quay.io/rhoai-konflux/alpine:latest
     name: rhoai-init
@@ -40,14 +42,61 @@ spec:
         fieldRef:
           fieldPath: metadata.annotations['results.tekton.dev/recordSummaryAnnotations']
     script: |
-      echo "build-url = $BUILD_URL"
-      echo "sha-url = $SHA_URL"
+      echo "----- DEBUG INFORMATION -----"
+      echo "Build URL: $BUILD_URL"
+      echo "SHA URL: $SHA_URL"
+      echo "Target Branch: $target_branch"
+      echo "Summary Annotations: $SUMMARY_ANNOTATIONS"
+
       pipelinerun_name=$(echo $BUILD_URL | sed 's|http.*/||')
-      echo "pipelinerun-name = $pipelinerun_name"
+      echo "Pipelinerun Name: $pipelinerun_name"
+
+      # Function to compare semantic versions
+      # returns true (0) if $1 >= $2
+      semver_ge() {
+          # This normalizes both versions to x.y.z for compare
+          IFS='.' read -r a1 a2 a3 <<<"${1}.0.0"
+          IFS='.' read -r b1 b2 b3 <<<"${2}.0.0"
+
+          if (( a1 > b1 )); then return 0; fi
+          if (( a1 < b1 )); then return 1; fi
+
+          if (( a2 > b2 )); then return 0; fi
+          if (( a2 < b2 )); then return 1; fi
+
+          if (( a3 >= b3 )); then return 0; fi
+
+          return 1
+      }
+
+      # Set CPE ID based on target branch
+      if [[ "$target_branch" =~ ^rhoai-[0-9]+\.[0-9]+$ ]]; then
+
+        # Strip the 'rhoai-' prefix from the branch name to extract the version (e.g., 'rhoai-3.2' → '3.2')
+        rhoai_version="${target_branch#rhoai-}"
+
+        # All RHOAI versions 2.20 and above use RHEL 9
+        # Determine rhel_version based on semantic comparison with 2.20
+        if semver_ge "$rhoai_version" "2.20"; then
+            rhel_version=9
+        else
+            rhel_version=8
+        fi
+
+        # Form the CPE identifier
+        cpe_id="cpe:/a:redhat:openshift_ai:${rhoai_version}::el${rhel_version}"
+
+      else
+        cpe_id=""
+      fi
+
+      echo "CPE ID: $cpe_id"
+      echo -n "${cpe_id}" > "$(results.cpe-id.path)"
       
+      # Skip slack message if expected cluster does not match
       CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
-      echo "expected cluster: $EXPECTED_CLUSTER"
-      echo "actual cluster: $CLUSTER"
+      echo "Expected Cluster: $EXPECTED_CLUSTER"
+      echo "Actual Cluster: $CLUSTER"
       if [[ -n "$EXPECTED_CLUSTER" && "$EXPECTED_CLUSTER" != "$CLUSTER" ]]; then
         echo "Build URL does not match expected cluster $CLUSTER."
         echo -n "true" > "$(results.skip-slack-message.path)"
@@ -66,4 +115,6 @@ spec:
         echo "pull request pipeline detected"
         slack_message=$(echo $slack_message | sed 's/CC - .*devops.*$//')
       fi
+
       echo -en "${slack_message}" > "$(results.slack-message-failure-text.path)"
+      echo "Slack Message: ${slack_message}"
