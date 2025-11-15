@@ -7,6 +7,10 @@ spec:
   - name: expected-cluster
     type: string
     default: ""
+  - name: build-type
+    description: FBC build type. It can be one of 'nightly', 'stage', or 'ci'.
+    type: string
+    default: ""
   results:
   - description: Notification text to be posted to slack
     name: slack-message-failure-text
@@ -114,6 +118,16 @@ spec:
       if [[ "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" ]]; then
         echo "pull request pipeline detected"
         slack_message=$(echo $slack_message | sed 's/CC - .*devops.*$//')
+      fi
+
+      # Tag @rhoai-releng for stage FBCF build failures
+      if [[ "$build-type" == "stage" ]]; then
+        alertEmoji=":actual_rotating_light:"
+        slack_message=${slack_message/:alert:/$alertEmoji}
+        # The "!" in <!subteam^S09SZP9J34M|rhoai-releng> causes Bash history expansion errors
+        set +H  # disable history expansion
+        slack_message=$(echo -e "${slack_message}\nCC - <!subteam^S09SZP9J34M|rhoai-releng>")
+        set -H  # re-enable history expansion
       fi
 
       echo -en "${slack_message}" > "$(results.slack-message-failure-text.path)"
