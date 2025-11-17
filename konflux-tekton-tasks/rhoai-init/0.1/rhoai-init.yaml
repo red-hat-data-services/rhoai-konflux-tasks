@@ -7,13 +7,17 @@ spec:
   - name: expected-cluster
     type: string
     default: ""
+  - name: build-type
+    description: FBC build type. It can be one of 'nightly', 'stage', or 'ci'.
+    type: string
+    default: ""
   results:
   - description: Notification text to be posted to slack
     name: slack-message-failure-text
   - description: Skip slack message
     name: skip-slack-message
   steps:
-  - image: quay.io/rhoai-konflux/alpine:latest
+  - image: registry.access.redhat.com/ubi9/ubi:latest
     name: rhoai-init
     env:
     - name: slack_message
@@ -27,6 +31,8 @@ spec:
           fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
     - name: EXPECTED_CLUSTER
       value: $(params.expected-cluster)
+    - name: BUILD_TYPE
+      value: $(params.build-type)
     - name: BUILD_URL
       valueFrom:
         fieldRef:
@@ -40,14 +46,20 @@ spec:
         fieldRef:
           fieldPath: metadata.annotations['results.tekton.dev/recordSummaryAnnotations']
     script: |
-      echo "build-url = $BUILD_URL"
-      echo "sha-url = $SHA_URL"
+      echo "----- DEBUG INFORMATION -----"
+      echo "Build URL: $BUILD_URL"
+      echo "SHA URL: $SHA_URL"
+      echo "Target Branch: $target_branch"
+      echo "Summary Annotations: $SUMMARY_ANNOTATIONS"
+      echo "Build Type: $BUILD_TYPE"
+
       pipelinerun_name=$(echo $BUILD_URL | sed 's|http.*/||')
-      echo "pipelinerun-name = $pipelinerun_name"
+      echo "Pipelinerun Name: $pipelinerun_name"
       
+      # Skip slack message if expected cluster does not match
       CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
-      echo "expected cluster: $EXPECTED_CLUSTER"
-      echo "actual cluster: $CLUSTER"
+      echo "Expected Cluster: $EXPECTED_CLUSTER"
+      echo "Actual Cluster: $CLUSTER"
       if [[ -n "$EXPECTED_CLUSTER" && "$EXPECTED_CLUSTER" != "$CLUSTER" ]]; then
         echo "Build URL does not match expected cluster $CLUSTER."
         echo -n "true" > "$(results.skip-slack-message.path)"
@@ -66,4 +78,16 @@ spec:
         echo "pull request pipeline detected"
         slack_message=$(echo $slack_message | sed 's/CC - .*devops.*$//')
       fi
+
+      # Tag @rhoai-releng for stage FBCF build failures
+      if [[ "$BUILD_TYPE" == "stage" ]]; then
+        alertEmoji=":actual_rotating_light:"
+        slack_message=${slack_message/:alert:/$alertEmoji}
+        # The "!" in <!subteam^S09SZP9J34M|rhoai-releng> causes Bash history expansion errors
+        set +H  # disable history expansion
+        slack_message=$(echo -e "${slack_message}\nCC - <!subteam^S09SZP9J34M|rhoai-releng>")
+        set -H  # re-enable history expansion
+      fi
+
       echo -en "${slack_message}" > "$(results.slack-message-failure-text.path)"
+      echo "Slack Message: ${slack_message}"
