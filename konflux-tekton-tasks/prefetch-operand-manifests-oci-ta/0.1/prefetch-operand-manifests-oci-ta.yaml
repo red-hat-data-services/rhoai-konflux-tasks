@@ -96,9 +96,9 @@ spec:
       - name: UTILS_REPO_BRANCH
         value: $(params.utilsRepoBranch)
       - name: BUILD_CONFIG_REPO_URL
-        value: $(params.utilsRepoUrl)
+        value: $(params.buildConfigRepoUrl)
       - name: BUILD_CONFIG_REPO_BRANCH
-        value: $(params.utilsRepoBranch)
+        value: $(params.buildConfigRepoBranch)
       - name: RHOAI_QUAY_API_TOKEN
         value: ""
       - name: BUILD_VERSION_TAG
@@ -147,7 +147,7 @@ spec:
         ls utils
         
         git clone ${BUILD_CONFIG_REPO_URL} --branch ${BUILD_CONFIG_REPO_BRANCH} RBC
-        ls utils
+        ls RBC
         
         pip install --default-timeout=100 -r utils/utils/operator-processor/requirements.txt
         
