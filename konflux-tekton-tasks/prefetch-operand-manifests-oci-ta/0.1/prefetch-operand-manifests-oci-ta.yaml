@@ -168,6 +168,90 @@ spec:
           cat $MANIFEST_CONFIG_PATH
           echo "current dir = $(pwd)"
         
+        
+        
+        
+        
+        
+        echo "*************** Prefetching manifests ********************"
+          PREFETCHED_MANIFEST_DIR_PATH="/var/workdir/prefetched-manifests"
+
+
+          # Create fresh directories
+          mkdir -p "$PREFETCHED_MANIFEST_DIR_PATH"
+          mkdir -p manifests
+          cd manifests
+          while IFS= read -r value;
+          do
+              value=${value/- /}
+              component=$value
+
+              # Skip empty keys
+              [[ -z "$component" ]] && continue
+               
+              echo "=============================================================="
+              echo "Fetching Manifest for component: $component"
+              echo "=============================================================="
+              if [[ -n $component ]]
+              then	
+                  git_url=$(value="$value" yq '.map[strenv(value)]["git.url"]' ${MANIFEST_CONFIG_PATH})
+                  git_commit=$(value="$value" yq '.map[strenv(value)]["git.commit"]' ${MANIFEST_CONFIG_PATH})
+                  ref_type=$(value="$value" yq '.map[strenv(value)]["ref_type"]' ${MANIFEST_CONFIG_PATH})
+                  BRANCH=$(value="$value" yq '.map[strenv(value)]["branch"]' ${MANIFEST_CONFIG_PATH})
+
+                  # If ref_type is branch, resolve the actual commit SHA
+                  if [[ "$ref_type" == "branch" ]]; then
+                    # Fetch latest commit SHA for the branch from remote
+                    git_commit=$(git ls-remote "$git_url" "refs/heads/$BRANCH" | awk '{print $1}')
+                    echo "Resolved git.commit for branch '$BRANCH' to commit SHA $git_commit"
+
+                    # Update the git.commit field in manifests-config.yaml for the current component.
+                    # Using strenv() to safely reference both the component key ($value) and the new commit SHA ($git_commit).
+                    # This avoids issues with --arg, which is not supported in this yq version, and prevents creating an empty "" key.
+                    value="$value" git_commit="$git_commit" yq -i eval '.map[strenv(value)]["git.commit"] = strenv(git_commit)' ${MANIFEST_CONFIG_PATH}
+
+                  fi
+
+                  src=$(value="$value" yq '.map[strenv(value)]["src"]' ${MANIFEST_CONFIG_PATH})
+                  dest=$(value="$value" yq '.map[strenv(value)]["dest"]' ${MANIFEST_CONFIG_PATH})
+                  
+                  echo "component = $component"
+                  echo "git_url = $git_url"
+                  echo "git_commit = $git_commit"
+                  echo "src = $src"
+                  echo "dest = $dest"
+          
+                  mkdir -p $component
+                  cd $component
+          
+                  # git config --global init.defaultBranch ${BRANCH}
+                  git init
+                  git remote add origin $git_url
+                  git config core.sparseCheckout true
+                  git config core.sparseCheckoutCone false
+                  echo "$src" >> .git/info/sparse-checkout
+                  git fetch --depth=1 origin $git_commit
+                  git checkout $git_commit
+          
+                  cd ../
+                  echo "current dir = $(pwd)"
+                  
+                  dest_dir_path=${PREFETCHED_MANIFEST_DIR_PATH}/$dest
+                  mkdir -p ${dest_dir_path}
+
+                  cp -r $component/$src/* ${dest_dir_path}
+                  echo ""
+              fi
+          done < <(yq e '.map | keys' ${MANIFEST_CONFIG_PATH} )
+          
+          cd ${PREFETCHED_MANIFEST_DIR_PATH}
+        ls -l
+        
+        
+        
+        
+        
+        
         # git clone https://github.com/red-hat-data-services/rhods-operator.git --branch rhoai-3.2 operator
         # mv -t ./ operator/prefetched-manifests
 
