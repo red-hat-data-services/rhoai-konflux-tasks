@@ -123,7 +123,7 @@ spec:
         
         mkdir -p /var/workdir/playpen
         git clone ${UTILS_REPO_URL} --branch ${UTILS_REPO_BRANCH} /var/workdir/utils
-        tree /var/workdir/utils
+        ls /var/workdir/utils
         pip install --default-timeout=100 -r /var/workdir/utils/utils/operator-processor/requirements.txt
         
         git clone https://github.com/red-hat-data-services/rhods-operator.git --branch rhoai-3.2 /var/workdir/operator
