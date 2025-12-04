@@ -101,6 +101,8 @@ spec:
         value: $(params.buildConfigRepoBranch)
       - name: RHOAI_QUAY_API_TOKEN
         value: ""
+      - name: OPENDATAHUB_QUAY_API_TOKEN
+        value: ""
       - name: BUILD_VERSION_TAG
         value: $(params.buildVersionTag)
     volumeMounts:
