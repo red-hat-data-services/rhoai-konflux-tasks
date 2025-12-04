@@ -43,6 +43,18 @@ spec:
       description: Git branch of the RHOAI-Konflux-Automation repo
       type: string
       default: "main"
+    - name: buildConfigRepoUrl
+      description: Git URL of the Build-Config repo
+      type: string
+      default: "https://github.com/opendatahub-io/ODH-Build-Config.git"
+    - name: buildConfigRepoBranch
+      description: Git branch of the Build-Config repo
+      type: string
+      default: "main"
+    - name: buildVersionTag
+      description: Image tag of operand images to be sought by operator-processor
+      type: string
+      default: "latest"
   results:
     - name: CACHI2_ARTIFACT
       description: The Trusted Artifact URI pointing to the artifact with
@@ -83,6 +95,14 @@ spec:
         value: $(params.utilsRepoUrl)
       - name: UTILS_REPO_BRANCH
         value: $(params.utilsRepoBranch)
+      - name: BUILD_CONFIG_REPO_URL
+        value: $(params.utilsRepoUrl)
+      - name: BUILD_CONFIG_REPO_BRANCH
+        value: $(params.utilsRepoBranch)
+      - name: RHOAI_QUAY_API_TOKEN
+        value: ""
+      - name: BUILD_VERSION_TAG
+        value: $(params.buildVersionTag)
     volumeMounts:
       - mountPath: /mnt/config
         name: config
@@ -109,6 +129,7 @@ spec:
           value: $(workspaces.netrc.bound)
         - name: WORKSPACE_NETRC_PATH
           value: $(workspaces.netrc.path)
+      workingDir: /var/workdir
       script: |
         # Install dependencies
         os="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -121,13 +142,31 @@ spec:
         ln -s $yq_filename yq
         cp $yq_filename /usr/local/bin/yq
         
-        mkdir -p /var/workdir/playpen
-        git clone ${UTILS_REPO_URL} --branch ${UTILS_REPO_BRANCH} /var/workdir/utils
-        ls /var/workdir/utils
-        pip install --default-timeout=100 -r /var/workdir/utils/utils/operator-processor/requirements.txt
+        mkdir -p playpen
+        git clone ${UTILS_REPO_URL} --branch ${UTILS_REPO_BRANCH} utils
+        ls utils
         
-        git clone https://github.com/red-hat-data-services/rhods-operator.git --branch rhoai-3.2 /var/workdir/operator
-        mv -t /var/workdir/ /var/workdir/operator/prefetched-manifests
+        git clone ${BUILD_CONFIG_REPO_URL} --branch ${BUILD_CONFIG_REPO_BRANCH} RBC
+        ls utils
+        
+        pip install --default-timeout=100 -r utils/utils/operator-processor/requirements.txt
+        
+          ODH_OPERATOR_COMPONENT_NAME=odh-ci-operator
+          
+          PATCH_YAML_PATH=RBC/bundle/bundle-patch.yaml
+          OPERANDS_MAP_PATH=source/build/operands-map.yaml
+          MANIFEST_CONFIG_PATH=source/build/manifests-config.yaml
+          
+          python3 utils/utils/operator-processor/operator-processor.py  -op process-operator-yamls --patch-yaml-path ${PATCH_YAML_PATH} --operands-map-path ${OPERANDS_MAP_PATH} --manifest-config-path ${MANIFEST_CONFIG_PATH} --rhoai-version ${BUILD_VERSION_TAG} --push-pipeline-yaml-path ${PUSH_PIPELINE_PATH} --push-pipeline-operation enable
+          
+          echo "----- OPERANDS_MAP ------"
+          cat $OPERANDS_MAP_PATH
+          echo "----- MANIFEST_CONFIG ------"
+          cat $MANIFEST_CONFIG_PATH
+          echo "current dir = $(pwd)"
+        
+        # git clone https://github.com/red-hat-data-services/rhods-operator.git --branch rhoai-3.2 operator
+        # mv -t ./ operator/prefetched-manifests
 
 #    - name: prefetch-dependencies
 #      image: quay.io/redhat-appstudio/cachi2:0.13.0@sha256:eb34cfe3fea20997eebd8164dc93eedb2fd7a60dc1fb4afcc1b1ff43df9d6667
