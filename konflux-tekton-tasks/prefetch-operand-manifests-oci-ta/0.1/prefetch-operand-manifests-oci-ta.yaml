@@ -156,7 +156,8 @@ spec:
           PATCH_YAML_PATH=RBC/bundle/bundle-patch.yaml
           OPERANDS_MAP_PATH=source/build/operands-map.yaml
           MANIFEST_CONFIG_PATH=source/build/manifests-config.yaml
-          
+          PUSH_PIPELINE_PATH=source/.tekton/${ODH_OPERATOR_COMPONENT_NAME}-push.yaml
+        
           python3 utils/utils/operator-processor/operator-processor.py  -op process-operator-yamls --patch-yaml-path ${PATCH_YAML_PATH} --operands-map-path ${OPERANDS_MAP_PATH} --manifest-config-path ${MANIFEST_CONFIG_PATH} --rhoai-version ${BUILD_VERSION_TAG} --push-pipeline-yaml-path ${PUSH_PIPELINE_PATH} --push-pipeline-operation enable
           
           echo "----- OPERANDS_MAP ------"
