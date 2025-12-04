@@ -175,7 +175,7 @@ spec:
         
         echo "*************** Prefetching manifests ********************"
           PREFETCHED_MANIFEST_DIR_PATH="/var/workdir/prefetched-manifests"
-
+          MANIFEST_CONFIG_PATH=/var/workdir/source/build/manifests-config.yaml
 
           # Create fresh directories
           mkdir -p "$PREFETCHED_MANIFEST_DIR_PATH"
