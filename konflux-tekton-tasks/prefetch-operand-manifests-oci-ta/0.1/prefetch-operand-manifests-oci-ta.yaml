@@ -174,11 +174,12 @@ spec:
         
         
         echo "*************** Prefetching manifests ********************"
-          PREFETCHED_MANIFEST_DIR_PATH="/var/workdir/prefetched-manifests"
+          PREFETCHED_MANIFEST_DIR_PATH="/var/workdir/cachi2/prefetched-manifests"
           MANIFEST_CONFIG_PATH=/var/workdir/source/build/manifests-config.yaml
 
           # Create fresh directories
           mkdir -p "$PREFETCHED_MANIFEST_DIR_PATH"
+          echo "# general cachi2 config" > /var/workdir/cachi2/cachi2.env
           mkdir -p manifests
           cd manifests
           while IFS= read -r value;
@@ -344,7 +345,7 @@ spec:
         - --store
         - $(params.ociStorage)
         - $(results.SOURCE_ARTIFACT.path)=/var/workdir/source
-        - $(results.CACHI2_ARTIFACT.path)=/var/workdir/prefetched-manifests
+        - $(results.CACHI2_ARTIFACT.path)=/var/workdir/cachi2
       env:
         - name: IMAGE_EXPIRES_AFTER
           value: $(params.ociArtifactExpiresAfter)
