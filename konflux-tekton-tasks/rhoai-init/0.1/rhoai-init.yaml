@@ -11,11 +11,29 @@ spec:
     description: FBC build type. It can be one of 'nightly', 'stage', or 'ci'.
     type: string
     default: ""
+  - default: ''
+    description: RHOAI version of the form X.Y.Z (e.g., 3.2.1)
+    name: rhoai-version
+    type: string
+  - name: image-output
+    description: Fully qualified output image (e.g., quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3)
+    type: string
+    default: ""
   results:
   - description: Notification text to be posted to slack
     name: slack-message-failure-text
   - description: Skip slack message
     name: skip-slack-message
+  - description: cpe id for the built image
+    name: cpe-id
+  - description: Image registry (e.g., quay.io)
+    name: image-registry
+  - description: Image namespace/organization (e.g., rhoai)
+    name: image-namespace
+  - description: Image name without tag (e.g., odh-trustyai-nemo-guardrails-server-rhel9)
+    name: image-name
+  - description: Image tag (e.g., rhoai-3.3)
+    name: image-tag
   steps:
   - image: registry.access.redhat.com/ubi9/ubi:latest
     name: rhoai-init
@@ -33,6 +51,10 @@ spec:
       value: $(params.expected-cluster)
     - name: BUILD_TYPE
       value: $(params.build-type)
+    - name: RHOAI_VERSION
+      value: $(params.rhoai-version)
+    - name: IMAGE_OUTPUT
+      value: $(params.image-output)
     - name: BUILD_URL
       valueFrom:
         fieldRef:
@@ -55,6 +77,92 @@ spec:
 
       pipelinerun_name=$(echo $BUILD_URL | sed 's|http.*/||')
       echo "Pipelinerun Name: $pipelinerun_name"
+
+      # Function to compare semantic versions
+      # returns true (0) if $1 >= $2
+      semver_ge() {
+          # We append ".0.0" to ensure at least three components (x.y.z) exist.
+          # This normalizes both versions ($1 and $2) to x.y.z format for comparison.
+          # We read four variables (x1, y1, z1, extra) to ensure x1, y1 and z1 only captures the x, y and z,
+          # and the dummy variable (extra) captures the extra trailing ".0" parts.
+          IFS='.' read -r x1 y1 z1 extra <<< "${1}.0.0"
+          IFS='.' read -r x2 y2 z2 extra <<< "${2}.0.0"
+
+          echo "Comparing versions: $1 (normalized to x1=$x1, y1=$y1, z1=$z1) and $2 (normalized to x2=$x2, y2=$y2, z2=$z2)"
+
+          if (( x1 > x2 )); then return 0; fi
+          if (( x1 < x2 )); then return 1; fi
+
+          if (( y1 > y2 )); then return 0; fi
+          if (( y1 < y2 )); then return 1; fi
+
+          if (( z1 >= z2 )); then return 0; fi
+
+          return 1
+      }
+
+      # No need to set CPE ID for pull request builds and if RHOAI version is not provided
+      if [[ ! "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" && -n "$RHOAI_VERSION" ]]; then
+
+        # All RHOAI versions 2.20 and above use RHEL 9
+        # Determine rhel_version based on semantic comparison with 2.20
+        if semver_ge "$RHOAI_VERSION" "2.20"; then
+            rhel_version=9
+        else
+            rhel_version=8
+        fi
+
+        IFS='.' read -r x y z extra <<< "${RHOAI_VERSION}.0.0"
+
+        # Form the CPE identifier
+        cpe_id="cpe:/a:redhat:openshift_ai:${x}.${y}::el${rhel_version}"
+      else
+        cpe_id=""
+      fi
+
+      echo "CPE ID: $cpe_id"
+      echo -n "${cpe_id}" > "$(results.cpe-id.path)"
+
+      # Extract image registry, namespace, name and tag from the image-output parameter
+      # Example: quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3
+      # Results: registry=quay.io, namespace=rhoai, name=odh-trustyai-nemo-guardrails-server-rhel9, tag=rhoai-3.3
+      if [[ -n "$IMAGE_OUTPUT" ]]; then
+        echo "----- PARSING IMAGE OUTPUT -----"
+        echo "Image Output: $IMAGE_OUTPUT"
+
+        # Extract registry (first part before the first /)
+        image_registry=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f1)
+
+        # Extract namespace (second part between first and second /)
+        image_namespace=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f2)
+
+        # Extract image name and tag (everything after the second /)
+        image_name_with_tag=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f3-)
+
+        # Split name and tag by ':'
+        if [[ "$image_name_with_tag" == *":"* ]]; then
+          image_name=$(echo "$image_name_with_tag" | rev | cut -d':' -f2- | rev)
+          image_tag=$(echo "$image_name_with_tag" | rev | cut -d':' -f1 | rev)
+        else
+          image_name="$image_name_with_tag"
+          image_tag=""
+        fi
+
+        echo "Image Registry: $image_registry"
+        echo "Image Namespace: $image_namespace"
+        echo "Image Name: $image_name"
+        echo "Image Tag: $image_tag"
+      else
+        image_registry=""
+        image_namespace=""
+        image_name=""
+        image_tag=""
+      fi
+
+      echo -n "${image_registry}" > "$(results.image-registry.path)"
+      echo -n "${image_namespace}" > "$(results.image-namespace.path)"
+      echo -n "${image_name}" > "$(results.image-name.path)"
+      echo -n "${image_tag}" > "$(results.image-tag.path)"
       
       # Skip slack message if expected cluster does not match
       CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
