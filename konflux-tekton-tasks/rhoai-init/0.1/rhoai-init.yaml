@@ -34,6 +34,12 @@ spec:
     name: image-name
   - description: Image tag (e.g., rhoai-3.3)
     name: image-tag
+  - description: Image name without rhel suffix (e.g., odh-trustyai-nemo-guardrails-server)
+    name: image-name-without-rhel-suffix
+  - description: Konflux component name (e.g., odh-trustyai-nemo-guardrails-server-v3-3)
+    name: konflux-component-name
+  - description: Human-readable display name (e.g., Odh Trustyai Nemo Guardrails Server)
+    name: display-name
   steps:
   - image: registry.access.redhat.com/ubi9/ubi:latest
     name: rhoai-init
@@ -152,17 +158,38 @@ spec:
         echo "Image Namespace: $image_namespace"
         echo "Image Name: $image_name"
         echo "Image Tag: $image_tag"
+
+        # Derive additional values from image_name
+        # image_name_without_rhel_suffix: Remove -rhel{N} suffix from anywhere in image_name
+        image_name_without_rhel_suffix=$(echo "$image_name" | sed 's/-rhel[0-9]*//g')
+
+        # konflux_component_name: Append hyphenated version (v{x}-{y}) to image_name_without_rhel_suffix
+        konflux_component_name="${image_name_without_rhel_suffix}-v${x}-${y}"
+
+        # display_name: Convert image_name_without_rhel_suffix to human-readable display name
+        # Replace hyphens with spaces, capitalize first letter of each word, keep ODH uppercase
+        display_name=$(echo "$image_name_without_rhel_suffix" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2)); print}' | sed 's/\bOdh\b/ODH/g')
+
+        echo "Image Name Without RHEL Suffix: $image_name_without_rhel_suffix"
+        echo "Konflux Component Name: $konflux_component_name"
+        echo "Display Name: $display_name"
       else
         image_registry=""
         image_namespace=""
         image_name=""
         image_tag=""
+        image_name_without_rhel_suffix=""
+        konflux_component_name=""
+        display_name=""
       fi
 
       echo -n "${image_registry}" > "$(results.image-registry.path)"
       echo -n "${image_namespace}" > "$(results.image-namespace.path)"
       echo -n "${image_name}" > "$(results.image-name.path)"
       echo -n "${image_tag}" > "$(results.image-tag.path)"
+      echo -n "${image_name_without_rhel_suffix}" > "$(results.image-name-without-rhel-suffix.path)"
+      echo -n "${konflux_component_name}" > "$(results.konflux-component-name.path)"
+      echo -n "${display_name}" > "$(results.display-name.path)"
       
       # Skip slack message if expected cluster does not match
       CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
