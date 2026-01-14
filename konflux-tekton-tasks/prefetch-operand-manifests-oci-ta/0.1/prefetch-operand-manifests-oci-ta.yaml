@@ -131,6 +131,10 @@ spec:
           value: $(workspaces.netrc.bound)
         - name: WORKSPACE_NETRC_PATH
           value: $(workspaces.netrc.path)
+        - name: ODH_OPERATOR_COMPONENT_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['appstudio.openshift.io/component']
       workingDir: /var/workdir
       script: |
         # Install dependencies
@@ -153,7 +157,7 @@ spec:
         
         pip install --default-timeout=100 -r utils/utils/operator-processor/requirements.txt
         
-          ODH_OPERATOR_COMPONENT_NAME=odh-ci-operator
+          # ODH_OPERATOR_COMPONENT_NAME=odh-ci-operator
           
           PATCH_YAML_PATH=RBC/bundle/bundle-patch.yaml
           OPERANDS_MAP_PATH=source/build/operands-map.yaml
