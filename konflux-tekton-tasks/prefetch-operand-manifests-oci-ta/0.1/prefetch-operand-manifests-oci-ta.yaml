@@ -158,7 +158,7 @@ spec:
         pip install --default-timeout=100 -r utils/utils/operator-processor/requirements.txt
         
           # ODH_OPERATOR_COMPONENT_NAME=odh-ci-operator
-          
+          echo "ODH_OPERATOR_COMPONENT_NAME = ${ODH_OPERATOR_COMPONENT_NAME}"
           PATCH_YAML_PATH=RBC/bundle/bundle-patch.yaml
           OPERANDS_MAP_PATH=source/build/operands-map.yaml
           MANIFEST_CONFIG_PATH=source/build/manifests-config.yaml
