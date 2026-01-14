@@ -38,7 +38,7 @@ spec:
     - name: utilsRepoUrl
       description: Git URL of the RHOAI-Konflux-Automation repo
       type: string
-      default: "https://github.com/opendatahub-io/RHOAI-Konflux-Automation.git"
+      default: "https://github.com/red-hat-data-services/RHOAI-Konflux-Automation.git"
     - name: utilsRepoBranch
       description: Git branch of the RHOAI-Konflux-Automation repo
       type: string
