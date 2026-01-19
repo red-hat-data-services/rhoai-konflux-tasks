@@ -165,3 +165,5 @@ spec:
           PR_TAG="odh-pr-${PR_NUMBER}"
       fi
       echo "PR_TAG=${PR_TAG}"
+      
+      echo -n "${PR_TAG}" > "$(results.mandatory-tag.path)"
