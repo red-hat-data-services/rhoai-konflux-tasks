@@ -15,8 +15,8 @@ spec:
     name: slack-message-failure-text
   - description: Cluster Mismatch
     name: cluster-mismatch
-  - description: Mandatory Label
-    name: mandatory-label
+  - description: Mandatory Tag
+    name: mandatory-tag
   steps:
   - image: quay.io/rhoai-konflux/alpine:latest
     name: rhoai-init
