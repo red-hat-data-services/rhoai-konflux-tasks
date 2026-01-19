@@ -15,8 +15,9 @@ spec:
     description: RHOAI version of the form X.Y.Z (e.g., 3.2.1)
     name: rhoai-version
     type: string
-  - description: Mandatory Tag
-    name: mandatory-tag
+  - name: pipeline-type
+    type: string
+    default: "push"
   results:
   - description: Notification text to be posted to slack
     name: slack-message-failure-text
