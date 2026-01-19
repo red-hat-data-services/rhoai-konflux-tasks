@@ -7,18 +7,27 @@ spec:
   - name: expected-cluster
     type: string
     default: ""
-  - name: pipeline-type
+  - name: build-type
+    description: FBC build type. It can be one of 'nightly', 'stage', or 'ci'.
     type: string
-    default: "push"
+    default: ""
+  - default: ''
+    description: RHOAI version of the form X.Y.Z (e.g., 3.2.1)
+    name: rhoai-version
+    type: string
+  - description: Mandatory Tag
+    name: mandatory-tag
   results:
   - description: Notification text to be posted to slack
     name: slack-message-failure-text
-  - description: Cluster Mismatch
-    name: cluster-mismatch
+  - description: Skip slack message
+    name: skip-slack-message
+  - description: cpe id for the built image
+    name: cpe-id
   - description: Mandatory Tag
     name: mandatory-tag
   steps:
-  - image: quay.io/rhoai-konflux/alpine:latest
+  - image: registry.access.redhat.com/ubi9/ubi:latest
     name: rhoai-init
     env:
     - name: slack_message
@@ -32,6 +41,10 @@ spec:
           fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
     - name: EXPECTED_CLUSTER
       value: $(params.expected-cluster)
+    - name: BUILD_TYPE
+      value: $(params.build-type)
+    - name: RHOAI_VERSION
+      value: $(params.rhoai-version)
     - name: BUILD_URL
       valueFrom:
         fieldRef:
@@ -51,19 +64,70 @@ spec:
     - name: PIPELINE_TYPE
       value: $(params.pipeline-type)
     script: |
-      echo "build-url = $BUILD_URL"
-      echo "sha-url = $SHA_URL"
+      echo "----- DEBUG INFORMATION -----"
+      echo "Build URL: $BUILD_URL"
+      echo "SHA URL: $SHA_URL"
+      echo "Target Branch: $target_branch"
+      echo "Summary Annotations: $SUMMARY_ANNOTATIONS"
+      echo "Build Type: $BUILD_TYPE"
+
       pipelinerun_name=$(echo $BUILD_URL | sed 's|http.*/||')
-      echo "pipelinerun-name = $pipelinerun_name"
+      echo "Pipelinerun Name: $pipelinerun_name"
+
+      # Function to compare semantic versions
+      # returns true (0) if $1 >= $2
+      semver_ge() {
+          # We append ".0.0" to ensure at least three components (x.y.z) exist.
+          # This normalizes both versions ($1 and $2) to x.y.z format for comparison.
+          # We read four variables (x1, y1, z1, extra) to ensure x1, y1 and z1 only captures the x, y and z,
+          # and the dummy variable (extra) captures the extra trailing ".0" parts.
+          IFS='.' read -r x1 y1 z1 extra <<< "${1}.0.0"
+          IFS='.' read -r x2 y2 z2 extra <<< "${2}.0.0"
+
+          echo "Comparing versions: $1 (normalized to x1=$x1, y1=$y1, z1=$z1) and $2 (normalized to x2=$x2, y2=$y2, z2=$z2)"
+
+          if (( x1 > x2 )); then return 0; fi
+          if (( x1 < x2 )); then return 1; fi
+
+          if (( y1 > y2 )); then return 0; fi
+          if (( y1 < y2 )); then return 1; fi
+
+          if (( z1 >= z2 )); then return 0; fi
+
+          return 1
+      }
+
+      # No need to set CPE ID for pull request builds and if RHOAI version is not provided
+      if [[ ! "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" && -n "$RHOAI_VERSION" ]]; then
+
+        # All RHOAI versions 2.20 and above use RHEL 9
+        # Determine rhel_version based on semantic comparison with 2.20
+        if semver_ge "$RHOAI_VERSION" "2.20"; then
+            rhel_version=9
+        else
+            rhel_version=8
+        fi
+
+        IFS='.' read -r x y z extra <<< "${RHOAI_VERSION}.0.0"
+
+        # Form the CPE identifier
+        cpe_id="cpe:/a:redhat:openshift_ai:${x}.${y}::el${rhel_version}"
+      else
+        cpe_id=""
+      fi
+
+      echo "CPE ID: $cpe_id"
+      echo -n "${cpe_id}" > "$(results.cpe-id.path)"
       
+      # Skip slack message if expected cluster does not match
       CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
-      echo "expected cluster: $EXPECTED_CLUSTER"
-      echo "actual cluster: $CLUSTER"
+      echo "Expected Cluster: $EXPECTED_CLUSTER"
+      echo "Actual Cluster: $CLUSTER"
       if [[ -n "$EXPECTED_CLUSTER" && "$EXPECTED_CLUSTER" != "$CLUSTER" ]]; then
         echo "Build URL does not match expected cluster $CLUSTER."
-        echo -n "true" > "$(results.cluster-mismatch.path)"
+        echo -n "true" > "$(results.skip-slack-message.path)"
       else
-        echo -n "false" > "$(results.cluster-mismatch.path)"
+        echo -n "false" > "$(results.skip-slack-message.path)"
       fi
 
       build_time="$(date +%Y-%m-%dT%H:%M:%S)"
@@ -72,7 +136,24 @@ spec:
       slack_message=${slack_message/__PIPELINERUN__NAME__/$pipelinerun_name}
       slack_message=${slack_message/__BUILD__TIME__/$build_time}
 
+      # don't notify devops team on pull request pipelines
+      if [[ "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" ]]; then
+        echo "pull request pipeline detected"
+        slack_message=$(echo $slack_message | sed 's/CC - .*devops.*$//')
+      fi
+
+      # Tag @rhoai-releng for stage FBCF build failures
+      if [[ "$BUILD_TYPE" == "stage" ]]; then
+        alertEmoji=":actual_rotating_light:"
+        slack_message=${slack_message/:alert:/$alertEmoji}
+        # The "!" in <!subteam^S09SZP9J34M|rhoai-releng> causes Bash history expansion errors
+        set +H  # disable history expansion
+        slack_message=$(echo -e "${slack_message}\nCC - <!subteam^S09SZP9J34M|rhoai-releng>")
+        set -H  # re-enable history expansion
+      fi
+
       echo -en "${slack_message}" > "$(results.slack-message-failure-text.path)"
+      echo "Slack Message: ${slack_message}"
       
       PR_TAG="{{revision}}"
       echo "PR_NUMBER=${PR_NUMBER}"
