@@ -73,6 +73,10 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.annotations['results.tekton.dev/recordSummaryAnnotations']
+    - name: KONFLUX_COMPONENT_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['appstudio.openshift.io/component']
     script: |
       echo "----- DEBUG INFORMATION -----"
       echo "Build URL: $BUILD_URL"
@@ -80,6 +84,21 @@ spec:
       echo "Target Branch: $target_branch"
       echo "Summary Annotations: $SUMMARY_ANNOTATIONS"
       echo "Build Type: $BUILD_TYPE"
+      echo "RHOAI Version: $RHOAI_VERSION"
+      echo "Image Output: $IMAGE_OUTPUT"
+      echo "Expected Cluster: $EXPECTED_CLUSTER"
+      echo "Konflux Component Name: $KONFLUX_COMPONENT_NAME"
+
+      # Fail if required parameters are not provided
+      if [[ -z "$RHOAI_VERSION" ]]; then
+        echo "ERROR: RHOAI version is required but was not provided"
+        exit 1
+      fi
+
+      if [[ -z "$IMAGE_OUTPUT" ]]; then
+        echo "ERROR: Image output is required but was not provided"
+        exit 1
+      fi
 
       pipelinerun_name=$(echo $BUILD_URL | sed 's|http.*/||')
       echo "Pipelinerun Name: $pipelinerun_name"
@@ -107,8 +126,8 @@ spec:
           return 1
       }
 
-      # No need to set CPE ID for pull request builds and if RHOAI version is not provided
-      if [[ ! "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" && -n "$RHOAI_VERSION" ]]; then
+      # No need to set CPE ID for pull request builds
+      if [[ ! "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request"' ]]; then
 
         # All RHOAI versions 2.20 and above use RHEL 9
         # Determine rhel_version based on semantic comparison with 2.20
@@ -118,6 +137,7 @@ spec:
             rhel_version=8
         fi
 
+        # Parse RHOAI version into x, y, z components for CPE ID
         IFS='.' read -r x y z extra <<< "${RHOAI_VERSION}.0.0"
 
         # Form the CPE identifier
@@ -132,63 +152,48 @@ spec:
       # Extract image registry, namespace, name and tag from the image-output parameter
       # Example: quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3
       # Results: registry=quay.io, namespace=rhoai, name=odh-trustyai-nemo-guardrails-server-rhel9, tag=rhoai-3.3
-      if [[ -n "$IMAGE_OUTPUT" ]]; then
-        echo "----- PARSING IMAGE OUTPUT -----"
-        echo "Image Output: $IMAGE_OUTPUT"
+      echo "----- PARSING IMAGE OUTPUT -----"
 
-        # Extract registry (first part before the first /)
-        image_registry=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f1)
+      # Extract registry (first part before the first /)
+      image_registry=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f1)
 
-        # Extract namespace (second part between first and second /)
-        image_namespace=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f2)
+      # Extract namespace (second part between first and second /)
+      image_namespace=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f2)
 
-        # Extract image name and tag (everything after the second /)
-        image_name_with_tag=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f3-)
+      # Extract image name and tag (everything after the second /)
+      image_name_with_tag=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f3-)
 
-        # Split name and tag by ':'
-        if [[ "$image_name_with_tag" == *":"* ]]; then
-          image_name=$(echo "$image_name_with_tag" | rev | cut -d':' -f2- | rev)
-          image_tag=$(echo "$image_name_with_tag" | rev | cut -d':' -f1 | rev)
-        else
-          image_name="$image_name_with_tag"
-          image_tag=""
-        fi
-
-        echo "Image Registry: $image_registry"
-        echo "Image Namespace: $image_namespace"
-        echo "Image Name: $image_name"
-        echo "Image Tag: $image_tag"
-
-        # Derive additional values from image_name
-        # image_name_without_rhel_suffix: Remove -rhel{N} suffix from anywhere in image_name
-        image_name_without_rhel_suffix=$(echo "$image_name" | sed 's/-rhel[0-9]*//g')
-
-        # konflux_component_name: Append hyphenated version (v{x}-{y}) to image_name_without_rhel_suffix
-        konflux_component_name="${image_name_without_rhel_suffix}-v${x}-${y}"
-
-        # display_name: Convert image_name_without_rhel_suffix to human-readable display name
-        # Replace hyphens with spaces, capitalize first letter of each word, keep ODH uppercase
-        display_name=$(echo "$image_name_without_rhel_suffix" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2)); print}' | sed 's/\bOdh\b/ODH/g')
-
-        echo "Image Name Without RHEL Suffix: $image_name_without_rhel_suffix"
-        echo "Konflux Component Name: $konflux_component_name"
-        echo "Display Name: $display_name"
+      # Split name and tag by ':'
+      if [[ "$image_name_with_tag" == *":"* ]]; then
+        image_name=$(echo "$image_name_with_tag" | rev | cut -d':' -f2- | rev)
+        image_tag=$(echo "$image_name_with_tag" | rev | cut -d':' -f1 | rev)
       else
-        image_registry=""
-        image_namespace=""
-        image_name=""
+        image_name="$image_name_with_tag"
         image_tag=""
-        image_name_without_rhel_suffix=""
-        konflux_component_name=""
-        display_name=""
       fi
+
+      echo "Image Registry: $image_registry"
+      echo "Image Namespace: $image_namespace"
+      echo "Image Name: $image_name"
+      echo "Image Tag: $image_tag"
+
+      # Derive additional values from image_name
+      # image_name_without_rhel_suffix: Remove -rhel{N} suffix from anywhere in image_name
+      image_name_without_rhel_suffix=$(echo "$image_name" | sed 's/-rhel[0-9]*//g')
+
+      # display_name: Convert image_name_without_rhel_suffix to human-readable display name
+      # Replace hyphens with spaces, capitalize first letter of each word, keep ODH uppercase
+      display_name=$(echo "$image_name_without_rhel_suffix" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2)); print}' | sed 's/\bOdh\b/ODH/g')
+
+      echo "Image Name Without RHEL Suffix: $image_name_without_rhel_suffix"
+      echo "Display Name: $display_name"
 
       echo -n "${image_registry}" > "$(results.image-registry.path)"
       echo -n "${image_namespace}" > "$(results.image-namespace.path)"
       echo -n "${image_name}" > "$(results.image-name.path)"
       echo -n "${image_tag}" > "$(results.image-tag.path)"
       echo -n "${image_name_without_rhel_suffix}" > "$(results.image-name-without-rhel-suffix.path)"
-      echo -n "${konflux_component_name}" > "$(results.konflux-component-name.path)"
+      echo -n "${KONFLUX_COMPONENT_NAME}" > "$(results.konflux-component-name.path)"
       echo -n "${display_name}" > "$(results.display-name.path)"
       
       # Skip slack message if expected cluster does not match
