@@ -45,7 +45,7 @@ spec:
                 -H "Accept: application/vnd.github+json" \
                 https://api.github.com/repos/$OWNER/$REPO/pulls/$PR_NUMBER \
                 | jq -r '.head.sha')
-        curl -s   -H "Authorization: Bearer $GITHUB_TOKEN"   -H "Accept: application/vnd.github+json"   "https://api.github.com/repos/rhoai-rhtap/feast/commits/$PR_SHA/check-runs"  | jq '.check_runs[] | {name, status}'
+        curl -s   -H "Authorization: Bearer $GITHUB_TOKEN"   -H "Accept: application/vnd.github+json"   "https://api.github.com/repos/$OWNER/$REPO/commits/$PR_SHA/check-runs"  | jq '.check_runs[] | {name, status}'
       fi
       
       API_BASE="https://api.github.com"
