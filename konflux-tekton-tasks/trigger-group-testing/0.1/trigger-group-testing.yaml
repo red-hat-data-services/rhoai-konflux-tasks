@@ -55,7 +55,7 @@ spec:
       PR_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
           -H "Accept: application/vnd.github.v3+json" \
           "$PR_URL")
-      
+      echo "PR_DATA=${PR_DATA}"
       HEAD_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
       
       if [ -z "$HEAD_SHA" ] || [ "$HEAD_SHA" = "null" ]; then
