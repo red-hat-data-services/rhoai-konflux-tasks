@@ -88,7 +88,7 @@ spec:
       ALL_COMPLETED=true
       while IFS='|' read -r name status; do
           # Skip the check with "odh-group-test" in its name
-          if [[ "$name" == *"odh-group-test"* || "$name" == *"${CURRENT_PR_NAME}" ]]; then
+          if [[ "$name" == *"odh-group-test"* || "$name" == *"${CURRENT_PIPELINE_NAME}" ]]; then
               echo "Skipping check: $name (contains odh-group-test or it is the current pipeline which is about to finish!)"
               continue
           fi
