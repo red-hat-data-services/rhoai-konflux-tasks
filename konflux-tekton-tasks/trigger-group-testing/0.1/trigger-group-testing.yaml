@@ -3,6 +3,9 @@ kind: Task
 metadata:
   name: trigger-group-testing
 spec:
+  workspaces:
+    - name: basic-auth
+      optional: true
   steps:
   - image: quay.io/konflux-ci/konflux-test:stable
     name: trigger-group-testing
