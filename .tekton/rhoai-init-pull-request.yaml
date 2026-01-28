@@ -30,7 +30,7 @@ spec:
     value: 5d
   - name: additional-tags
     value: 
-    - 0.1
+    - '0.1'
   - name: dockerfile
     value: Dockerfile
   - name: path-context

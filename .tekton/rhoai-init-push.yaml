@@ -27,7 +27,7 @@ spec:
     value: quay.io/rhoai/rhoai-init:0.1-{{revision}}
   - name: additional-tags
     value: 
-    - 0.1
+    - '0.1'
   - name: dockerfile
     value: Dockerfile
   - name: path-context
