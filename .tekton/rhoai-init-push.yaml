@@ -24,7 +24,10 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/rhoai/rhoai-init:{{revision}}
+    value: quay.io/rhoai/rhoai-init:0.1-{{revision}}
+  - name: additional-tags
+    value: 
+    - 0.1
   - name: dockerfile
     value: Dockerfile
   - name: path-context
@@ -83,6 +86,9 @@ spec:
     - default: "false"
       description: Enable cache proxy configuration
       name: enable-cache-proxy
+    - default: []
+      description: Additional tags for the pushed image
+      name: additional-tags
     results:
     - description: ""
       name: IMAGE_URL
@@ -286,6 +292,9 @@ spec:
         value: $(tasks.build-image-index.results.IMAGE_URL)
       - name: IMAGE_DIGEST
         value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+      - name: ADDITIONAL_TAGS
+        value: 
+        - $(params.additional-tags[*])
       runAfter:
       - build-image-index
       taskRef:
