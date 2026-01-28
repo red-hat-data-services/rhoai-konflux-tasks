@@ -89,6 +89,7 @@ spec:
     - default: []
       description: Additional tags for the pushed image
       name: additional-tags
+      type: array
     results:
     - description: ""
       name: IMAGE_URL
