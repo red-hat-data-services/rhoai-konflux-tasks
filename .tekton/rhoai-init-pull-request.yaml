@@ -28,6 +28,9 @@ spec:
     value: quay.io/rhoai/rhoai-init:on-pr-{{revision}}
   - name: image-expires-after
     value: 5d
+  - name: additional-tags
+    value: 
+    - 0.1
   - name: dockerfile
     value: Dockerfile
   - name: path-context
