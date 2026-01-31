@@ -47,6 +47,9 @@ spec:
             component=$(echo "$row" | base64 -d | jq -r '.key')
             repo_path=$(echo "$row" | base64 -d | jq -r '.value')
             
+            echo "component=${component}"
+            echo "repo_path=${repo_path}"
+        
             if skopeo inspect "docker://quay/io/${repo_path}:${TAG}" &>/dev/null; then
                 echo "No image found with tag ${TAG}, falling back to the ${FALLBACK_TAG} image for ${repo_path}"
                 TAG=${FALLBACK_TAG}
