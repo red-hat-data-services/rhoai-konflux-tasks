@@ -33,9 +33,6 @@ spec:
         cat /etc/*release
         json_string="$COMPONENTS"
         echo ${COMPONENTS}
-        # Tag to search for
-        TAG="odh-pr-${PR_NUMBER}"
-        FALLBACK_TAG="odh-stable"
         
         # Temporary file to store results
         temp_file=$(mktemp)
@@ -43,6 +40,10 @@ spec:
 
         # Parse JSON and iterate through each component
         while IFS= read -r row; do
+            # Tag to search for
+            TAG="odh-pr-${PR_NUMBER}"
+            FALLBACK_TAG="odh-stable"
+        
             # Decode the base64 encoded row
             component=$(echo "$row" | base64 -d | jq -r '.key')
             repo_path=$(echo "$row" | base64 -d | jq -r '.value')
