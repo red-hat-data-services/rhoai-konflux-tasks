@@ -40,6 +40,10 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
+    - name: revision
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha']
     - name: EXPECTED_CLUSTER
       value: $(params.expected-cluster)
     - name: BUILD_TYPE
@@ -156,7 +160,7 @@ spec:
       echo -en "${slack_message}" > "$(results.slack-message-failure-text.path)"
       echo "Slack Message: ${slack_message}"
       
-      PR_TAG="{{revision}}"
+      PR_TAG="${revision}"
       echo "PR_NUMBER=${PR_NUMBER}"
       echo "PIPELINE_TYPE=${PIPELINE_TYPE}"
       
