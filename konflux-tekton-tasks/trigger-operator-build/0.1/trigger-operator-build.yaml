@@ -1,0 +1,67 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: trigger-operator-build
+spec:
+  workspaces:
+    - name: basic-auth
+      optional: true
+  params:
+    - description: odh-operator component name
+      name: OPERATOR-COMPONENT-NAME
+      type: string
+      default: "odh-operator"
+    - description: odh-operator repo name
+      name: OPERATOR-REPO-NAME
+      type: string
+      default: "opendatahub-io/opendatahub-operator"
+    - description: odh-operator git branch
+      name: OPERATOR-BRANCH-NAME
+      type: string
+      default: "main"
+    - description: operator-bundle component name
+      name: BUNDLE-COMPONENT-NAME
+      type: string
+      default: "operator-bundle"
+    - description: FBC fragment component name
+      name: FBCF-COMPONENT-NAME
+      type: string
+      default: "odh-fbc-fragment"
+  steps:
+  - image: quay.io/konflux-ci/konflux-test:stable
+    name: trigger-operator-build
+    env:
+    - name: OPERATOR_COMPONENT_NAME
+      value: "$(params.OPERATOR-COMPONENT-NAME)"
+    - name: OPERATOR_REPO_NAME
+      value: "$(params.OPERATOR-REPO-NAME)"
+    - name: OPERATOR_BRANCH_NAME
+      value: "$(params.OPERATOR-BRANCH-NAME)"
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+      value: $(workspaces.basic-auth.bound)
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+      value: $(workspaces.basic-auth.path)
+    - name: COMPONENT_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['appstudio.openshift.io/component']
+    script: |
+      #!/bin/bash
+      set -e
+      echo "----- DEBUG INFORMATION -----"
+      echo "OPERATOR_COMPONENT_NAME: ${OPERATOR_COMPONENT_NAME}"
+      echo "OPERATOR_REPO_NAME: ${OPERATOR_REPO_NAME}"
+      echo "OPERATOR_BRANCH_NAME: ${OPERATOR_BRANCH_NAME}"
+
+
+      LATEST_COMMIT_SHA=$(git ls-remote https://github.com/${OPERATOR_REPO_NAME}.git refs/heads/${OPERATOR_BRANCH_NAME} | awk '{print $1}')
+      echo "LATEST_COMMIT_SHA=${LATEST_COMMIT_SHA}"
+      if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+        echo "configuring gh cli"
+        ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
+        GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+      fi
+      COMMENT="/test ${OPERATOR_COMPONENT_NAME}-on-push branch:${OPERATOR_BRANCH_NAME}"
+      echo "COMMENT=$COMMENT"
+      curl -X POST https://api.github.com/repos/${OPERATOR_REPO_NAME}/commits/${LATEST_COMMIT_SHA}/comments -H "Accept: application/vnd.github+json"  -H "Authorization: token $GITHUB_TOKEN"  -H "Content-Type: application/json" -d "{\"body\": \"${COMMENT}\"}"
+      echo "Successfully triggered the operator build!.
