@@ -164,27 +164,31 @@ spec:
       echo -n "${cpe_id}" > "$(results.cpe-id.path)"
 
       # Extract image registry, namespace, name and tag from the image-output parameter
-      # Example: quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3
-      # Results: registry=quay.io, namespace=rhoai, name=odh-trustyai-nemo-guardrails-server-rhel9, tag=rhoai-3.3
+      # Supports both 2-level and 3-level paths:
+      #   quay.io/rhoai/image-name:tag -> registry=quay.io, namespace=rhoai, name=image-name
+      #   quay.io/redhat-user-workloads/rhoai-tenant/image-name:tag -> registry=quay.io, namespace=redhat-user-workloads/rhoai-tenant, name=image-name
       echo "----- PARSING IMAGE OUTPUT -----"
 
       # Extract registry (first part before the first /)
       image_registry=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f1)
 
-      # Extract namespace (second part between first and second /)
-      image_namespace=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f2)
+      # Remove registry to get the rest (namespace/path/image:tag)
+      image_path_with_tag="${IMAGE_OUTPUT#*/}"
 
-      # Extract image name and tag (everything after the second /)
-      image_name_with_tag=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f3-)
-
-      # Split name and tag by ':'
-      if [[ "$image_name_with_tag" == *":"* ]]; then
-        image_name=$(echo "$image_name_with_tag" | rev | cut -d':' -f2- | rev)
-        image_tag=$(echo "$image_name_with_tag" | rev | cut -d':' -f1 | rev)
+      # Split off the tag first (everything after the last :)
+      if [[ "$image_path_with_tag" == *":"* ]]; then
+        image_path=$(echo "$image_path_with_tag" | rev | cut -d':' -f2- | rev)
+        image_tag=$(echo "$image_path_with_tag" | rev | cut -d':' -f1 | rev)
       else
-        image_name="$image_name_with_tag"
+        image_path="$image_path_with_tag"
         image_tag=""
       fi
+
+      # Extract image name (last component of the path)
+      image_name=$(echo "$image_path" | rev | cut -d'/' -f1 | rev)
+
+      # Extract namespace (everything before the image name)
+      image_namespace=$(echo "$image_path" | rev | cut -d'/' -f2- | rev)
 
       echo "Image Registry: $image_registry"
       echo "Image Namespace: $image_namespace"
