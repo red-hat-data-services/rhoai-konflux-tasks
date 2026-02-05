@@ -12,7 +12,7 @@ spec:
     type: string
     default: ""
   - default: ''
-    description: RHOAI version of the form X.Y.Z (e.g., 3.2.1)
+    description: RHOAI version of the form X.Y.Z or X.Y.Z-suffix (e.g., 3.2.1 or 3.4.0-ea.1). Optional for PR pipelines.
     name: rhoai-version
     type: string
   - name: image-output
@@ -89,8 +89,16 @@ spec:
       echo "Expected Cluster: $EXPECTED_CLUSTER"
       echo "Konflux Component Name: $KONFLUX_COMPONENT_NAME"
 
+      # Check if this is a pull request pipeline
+      is_pull_request=false
+      if [[ "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request"' ]]; then
+        is_pull_request=true
+        echo "Pull request pipeline detected"
+      fi
+
       # Fail if required parameters are not provided
-      if [[ -z "$RHOAI_VERSION" ]]; then
+      # rhoai-version is optional for PR pipelines
+      if [[ -z "$RHOAI_VERSION" && "$is_pull_request" == "false" ]]; then
         echo "ERROR: RHOAI version is required but was not provided"
         exit 1
       fi
@@ -106,12 +114,16 @@ spec:
       # Function to compare semantic versions
       # returns true (0) if $1 >= $2
       semver_ge() {
+          # Strip pre-release suffix (e.g., "3.4.0-ea.1" becomes "3.4.0")
+          local v1="${1%%-*}"
+          local v2="${2%%-*}"
+
           # We append ".0.0" to ensure at least three components (x.y.z) exist.
           # This normalizes both versions ($1 and $2) to x.y.z format for comparison.
           # We read four variables (x1, y1, z1, extra) to ensure x1, y1 and z1 only captures the x, y and z,
           # and the dummy variable (extra) captures the extra trailing ".0" parts.
-          IFS='.' read -r x1 y1 z1 extra <<< "${1}.0.0"
-          IFS='.' read -r x2 y2 z2 extra <<< "${2}.0.0"
+          IFS='.' read -r x1 y1 z1 extra <<< "${v1}.0.0"
+          IFS='.' read -r x2 y2 z2 extra <<< "${v2}.0.0"
 
           echo "Comparing versions: $1 (normalized to x1=$x1, y1=$y1, z1=$z1) and $2 (normalized to x2=$x2, y2=$y2, z2=$z2)"
 
@@ -138,7 +150,9 @@ spec:
         fi
 
         # Parse RHOAI version into x, y, z components for CPE ID
-        IFS='.' read -r x y z extra <<< "${RHOAI_VERSION}.0.0"
+        # Strip pre-release suffix first (e.g., "3.4.0-ea.1" becomes "3.4.0")
+        clean_version="${RHOAI_VERSION%%-*}"
+        IFS='.' read -r x y z extra <<< "${clean_version}.0.0"
 
         # Form the CPE identifier
         cpe_id="cpe:/a:redhat:openshift_ai:${x}.${y}::el${rhel_version}"
