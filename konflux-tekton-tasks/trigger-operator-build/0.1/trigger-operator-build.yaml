@@ -49,6 +49,11 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.labels['appstudio.openshift.io/component']
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: odh-github-secret
+          key: operator-ci-token
     script: |
       #!/bin/bash
       set -e
@@ -67,7 +72,7 @@ spec:
           if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
             echo "configuring gh cli"
             ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
-            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+            # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
           fi
           COMMENT="/test ${OPERATOR_COMPONENT_NAME}-on-push branch:${OPERATOR_BRANCH_NAME}"
           echo "COMMENT=$COMMENT"
