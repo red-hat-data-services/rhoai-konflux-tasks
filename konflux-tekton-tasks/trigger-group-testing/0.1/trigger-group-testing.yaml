@@ -73,6 +73,7 @@ spec:
           "$CHECK_RUNS_URL")
       
       # Extract check runs with names starting with "Red Hat Konflux"
+      echo "CHECK_RUNS_DATA=${CHECK_RUNS_DATA}"
       echo "Analyzing check runs..."
       KONFLUX_CHECKS=$(echo "$CHECK_RUNS_DATA" | jq -r '.check_runs[] | select(.name | startswith("Red Hat Konflux")) | "\(.name)|\(.status)"')
       
