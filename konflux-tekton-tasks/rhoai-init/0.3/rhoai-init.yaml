@@ -33,9 +33,19 @@ spec:
     env:
     - name: slack_message
       valueFrom:
-        secretKeyRef:
-          name: rhoai-konflux-secret
-          key: slack-component-failure-notification
+        configMapKeyRef:
+          name: slack-config
+          key: component-failure-template
+    - name: component_slack_handle
+      valueFrom:
+        configMapKeyRef:
+          name: slack-config
+          key: component-slack-handle
+    - name: release_slack_handle
+      valueFrom:
+        configMapKeyRef:
+          name: slack-config
+          key: release-slack-handle
     - name: target_branch
       valueFrom:
         fieldRef:
@@ -141,6 +151,8 @@ spec:
       slack_message=${slack_message/__PIPELINERUN__NAME__/$pipelinerun_name}
       slack_message=${slack_message/__BUILD__TIME__/$build_time}
 
+      slack_message=$(echo -e "${slack_message}\nCC - ${component_slack_handle}")
+
       # don't notify devops team on pull request pipelines
       if [[ "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" ]]; then
         echo "pull request pipeline detected"
@@ -153,7 +165,7 @@ spec:
         slack_message=${slack_message/:alert:/$alertEmoji}
         # The "!" in <!subteam^S09SZP9J34M|rhoai-releng> causes Bash history expansion errors
         set +H  # disable history expansion
-        slack_message=$(echo -e "${slack_message}\nCC - <!subteam^S09SZP9J34M|rhoai-releng>")
+        slack_message=$(echo -e "${slack_message}\nCC - ${release_slack_handle}")
         set -H  # re-enable history expansion
       fi
 
