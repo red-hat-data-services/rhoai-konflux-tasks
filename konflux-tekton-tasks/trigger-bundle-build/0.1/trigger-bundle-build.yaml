@@ -33,11 +33,11 @@ spec:
       value: $(workspaces.basic-auth.bound)
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
       value: $(workspaces.basic-auth.path)
-#    - name: GITHUB_TOKEN
-#      valueFrom:
-#        secretKeyRef:
-#          name: odh-github-secret
-#          key: operator-ci-token
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: odh-github-secret
+          key: bundle-ci-token
     script: |
       #!/bin/bash
       set -e
@@ -50,7 +50,7 @@ spec:
       if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
         echo "configuring gh cli"
         ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
-        GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+        # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
       fi
       if [[ -n "$INPUTS" ]]; then
         PAYLOAD=$(jq -n --arg ref "$BUNDLE_BRANCH_NAME" --argjson inputs "$INPUTS" '{ref: $ref, inputs: $inputs}')
