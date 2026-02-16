@@ -27,6 +27,8 @@ spec:
     name: cpe-id
   - description: Mandatory Tag
     name: mandatory-tag
+  - description: Build URL
+    name: build-url
   steps:
   - image: registry.access.redhat.com/ubi9/ubi:latest
     name: rhoai-init
@@ -136,6 +138,7 @@ spec:
       
       # Skip slack message if expected cluster does not match
       CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
+
       echo "Expected Cluster: $EXPECTED_CLUSTER"
       echo "Actual Cluster: $CLUSTER"
       if [[ -n "$EXPECTED_CLUSTER" && "$EXPECTED_CLUSTER" != "$CLUSTER" ]]; then
@@ -180,3 +183,5 @@ spec:
       echo "PR_TAG=${PR_TAG}"
       
       echo -n "${PR_TAG}" > "$(results.mandatory-tag.path)"
+
+      echo -n "${BUILD_URL}" > "$(results.build-url.path)"
