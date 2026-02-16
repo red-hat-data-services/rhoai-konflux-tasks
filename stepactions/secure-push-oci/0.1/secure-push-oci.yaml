@@ -52,7 +52,11 @@ spec:
           echo -e "[ERROR]: provided OCI artifact reference '$OCI_ARTIFACT_REFERENCE' is not in correct format 'quay.io/org/repo:tag'"
           exit 1
       fi
-
+      echo "/home/tool-box/.docker/"
+      ls -l /home/tool-box/.docker/
+      echo "/home/tool-box/.docker/config.json"
+      ls -l /home/tool-box/.docker/config.json
+    
       TAG="${OCI_ARTIFACT_REFERENCE##*:}"
 
       TEMP_ANNOTATION_FILE="$(mktemp)"
