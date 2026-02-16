@@ -141,7 +141,8 @@ spec:
                --arg image "$full_image_uri" \
                --arg giturl "$git_url" \
                --arg gitcommit "$git_commit" \
-               '. + {($key): {image: $image, "git.url": $giturl, "git.commit": $gitcommit}}' \
+               --arg image_tag "$TAG" \
+               '. + {($key): {image: $image, "git.url": $giturl, "git.commit": $gitcommit, "image_tag": $image_tag}}' \
                "$temp_file" > "${temp_file}.tmp" && mv "${temp_file}.tmp" "$temp_file"
 
             echo "" >&2
