@@ -10,6 +10,9 @@ metadata:
     tekton.dev/pipelines.minVersion: 0.12.1
     tekton.dev/tags: konflux
 spec:
+  workspaces:
+    - name: basic-auth
+      optional: true
   description: |
     The `pull-request-commenter` Task posts a comment on a GitHub pull request indicating the status of a Tekton pipeline execution.
     This task deletes any previous comments made by the pipeline and posts a new one, unless the pipeline was successful, in which case
@@ -99,6 +102,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/log-url']
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+          value: $(workspaces.basic-auth.bound)
+        - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+          value: $(workspaces.basic-auth.path)
       workingDir: /workspace
       image: quay.io/konflux-qe-incubator/konflux-qe-tools:latest
       volumeMounts:
@@ -127,7 +134,12 @@ spec:
             echo "Error: GITHUB_TOKEN env is not set."
             exit 1
         fi
-
+        if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+          echo "configuring gh cli"
+          ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
+          GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+          echo "taking github token from Konflux bot"
+        fi
         # Get the authenticated user's login
         USER_LOGIN=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/user" | jq -r '.login')
