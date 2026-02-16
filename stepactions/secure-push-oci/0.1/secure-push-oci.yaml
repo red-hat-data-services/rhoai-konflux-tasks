@@ -32,7 +32,7 @@ spec:
   volumeMounts:
   - name: $(params.credentials-volume-name)
     mountPath: /home/tool-box/.docker/config.json
-    subPath: .dockerconfigjson
+    subPath: config.json
   workingDir: $(params.workdir-path)
   env:
     - name: OCI_ARTIFACT_REFERENCE
