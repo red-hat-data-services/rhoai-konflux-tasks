@@ -148,18 +148,18 @@ spec:
                 -X DELETE \
                 "https://api.github.com/repos/$GIT_ORG/$GIT_REPO/issues/comments/$COMMENT_ID")
 
-        # If the pipeline succeeded, do not post a new comment and exit
-        # if [[ "$PIPELINE_RUN_AGGREGATE_STATUS" == "Succeeded" ]]; then
-        #    echo "[INFO]: Pipeline finished successfully. No new comment will be posted."
-        #    exit 0
-        # fi
+            if [ -z "$DELETE_RESPONSE" ]; then
+                echo "[INFO] Existing comment with ID $COMMENT_ID by $USER_LOGIN deleted successfully."
+            else
+                echo "[ERROR] Failed to delete comment with ID $COMMENT_ID. Response: $DELETE_RESPONSE"
+            fi
         done
 
         # If the pipeline succeeded, do not post a new comment and exit
-        if [[ "$PIPELINE_RUN_AGGREGATE_STATUS" == "Succeeded" ]]; then
-            echo "[INFO]: Pipeline finished successfully. No new comment will be posted."
-            exit 0
-        fi
+        # if [[ "$PIPELINE_RUN_AGGREGATE_STATUS" == "Succeeded" ]]; then
+        #     echo "[INFO]: Pipeline finished successfully. No new comment will be posted."
+        #     exit 0
+        # fi
 
         # Construct build/integration console url based on whether we are running this task inside build-definitions build pipeline or konflux integration test pipeline
         if [ -z "${BUILD_CONSOLE_URL}" ]; then
