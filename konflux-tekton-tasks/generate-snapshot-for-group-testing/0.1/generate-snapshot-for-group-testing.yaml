@@ -7,6 +7,7 @@ spec:
     - name: basic-auth
       optional: true
     - name: shared-data
+      optional: true
   params:
     - name: COMPONENTS
       description: List of components in the group
@@ -152,11 +153,17 @@ spec:
         # Print final output JSON
         echo "Output JSON:" >&2
         cat "$temp_file" | jq '.'
+        echo "trying to update the snapshot as a result.."
         if ! echo -en $(cat "$temp_file") > "$(results.SNAPSHOT.path)"; then
-            echo "writing the snapshot to a file since cannot write to the result.."
-            echo -en $(cat "$temp_file") >  $(workspaces.shared-data.path)/group-snapshot.json
-            echo -en "$(workspaces.shared-data.path)/group-snapshot.json" > "$(results.SNAPSHOT.path)"
-            echo "successfully saved the snapshot to $(workspaces.shared-data.path)/group-snapshot.json"
+            if [[ -e "$(workspaces.shared-data.path)" ]]; then
+                echo "writing the snapshot to a file since cannot write to the result.."
+                echo -en $(cat "$temp_file") >  $(workspaces.shared-data.path)/group-snapshot.json
+                echo -en "$(workspaces.shared-data.path)/group-snapshot.json" > "$(results.SNAPSHOT.path)"
+                echo "successfully saved the snapshot to $(workspaces.shared-data.path)/group-snapshot.json"
+            else
+                echo "workspace shared-data not provided and unable to write tekton result.."
+                exit 1
+            fi
         fi
         
         # Cleanup
