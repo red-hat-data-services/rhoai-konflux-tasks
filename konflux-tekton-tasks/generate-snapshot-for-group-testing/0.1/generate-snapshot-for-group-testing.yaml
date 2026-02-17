@@ -154,7 +154,7 @@ spec:
         echo "Output JSON:" >&2
         cat "$temp_file" | jq '.'
         echo "trying to update the snapshot as a result.."
-        if ! echo -en $(cat "$temp_file") > "$(results.SNAPSHOT.path)"; then
+        if ! cat "$temp_file" > "$(results.SNAPSHOT.path)"; then
             if [[ -e "$(workspaces.shared-data.path)" ]]; then
                 echo "writing the snapshot to a file since cannot write to the result.."
                 echo -en $(cat "$temp_file") >  $(workspaces.shared-data.path)/group-snapshot.json
@@ -164,6 +164,8 @@ spec:
                 echo "workspace shared-data not provided and unable to write tekton result.."
                 exit 1
             fi
+        else
+            echo -en $(cat "$temp_file") > "$(results.SNAPSHOT.path)"
         fi
         
         # Cleanup
