@@ -6,6 +6,7 @@ spec:
   workspaces:
     - name: basic-auth
       optional: true
+    - name: shared-data
   params:
     - name: COMPONENTS
       description: List of components in the group
@@ -151,6 +152,12 @@ spec:
         # Print final output JSON
         echo "Output JSON:" >&2
         cat "$temp_file" | jq '.'
-        echo -en $(cat "$temp_file") > "$(results.SNAPSHOT.path)"
+        if ! echo -en $(cat "$temp_file") > "$(results.SNAPSHOT.path)"; then
+            echo "writing the snapshot to a file since cannot write to the result.."
+            echo -en $(cat "$temp_file") >  $(workspaces.shared-data.path)/group-snapshot.json
+            echo -en "$(workspaces.shared-data.path)/group-snapshot.json" > "$(results.SNAPSHOT.path)"
+            echo "successfully saved the snapshot to $(workspaces.shared-data.path)/group-snapshot.json"
+        fi
+        
         # Cleanup
         rm -f "$temp_file"
