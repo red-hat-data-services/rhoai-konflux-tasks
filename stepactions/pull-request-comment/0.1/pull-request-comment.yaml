@@ -85,11 +85,13 @@ spec:
       value: "$(params.pull-request-number)"
     - name: PIPELINE_RUN_AGGREGATE_STATUS
       value: "$(params.pipeline-aggregate-status)"
+    - name: ARTIFACT_BROWSER_URL
+      value: "$(params.artifact-browser-url)"
   workingDir: /workspace
   script: |
     #!/bin/sh
 
-    PIPELINE_STATUS=$(kubectl get pipelinerun $(params.test-name) -o jsonpath='{.status.conditions[0].reason}')
+    PIPELINE_STATUS=$(kubectl get pipelinerun ${TEST_NAME} -o jsonpath='{.status.conditions[0].reason}')
 
     if [ "${PIPELINE_STATUS}" = "CancelledRunningFinally" ]; then
       echo "PipelineRun was cancelled. Skipping sending a comment to the PR."
@@ -143,10 +145,10 @@ spec:
     # Construct build/integration console url based on whether we are running this task inside build-definitions build pipeline or konflux integration test pipeline
     if [ -z "${BUILD_CONSOLE_URL}" ]; then
       echo "[INFO] Task is running inside build-definitions build pipeline"
-      export BUILD_CONSOLE_URL="$(oc whoami --show-console)/k8s/ns/konflux-ci/tekton.dev~v1~PipelineRun/$(params.test-name)"
+      export BUILD_CONSOLE_URL="$(oc whoami --show-console)/k8s/ns/konflux-ci/tekton.dev~v1~PipelineRun/${TEST_NAME}"
       export INTEGRATION_TEST_CONSOLE_URL="${BUILD_CONSOLE_URL}/logs?taskName=e2e-tests"
     else
-      export INTEGRATION_TEST_CONSOLE_URL="${BUILD_CONSOLE_URL%/*}/$(params.test-name)"
+      export INTEGRATION_TEST_CONSOLE_URL="${BUILD_CONSOLE_URL%/*}/${TEST_NAME}"
     fi
 
     # Store the content of the test results analysis (from a previous step) in a variable
@@ -154,9 +156,9 @@ spec:
 
     # Generate artifact browser link if URL is provided
     ARTIFACT_BROWSER_URL=$(echo "\<not enabled\>")
-    if [ -n "$(params.artifact-browser-url)" ]; then
+    if [ -n "${ARTIFACT_BROWSER_URL}" ]; then
         # Use the provided artifact browser URL
-        export ARTIFACT_BROWSER_BASE_URL="$(params.artifact-browser-url)"
+        export ARTIFACT_BROWSER_BASE_URL="${ARTIFACT_BROWSER_URL}"
         # Extract repository name from OCI container reference
         REPO_NAME=$(echo "$OCI_STORAGE_CONTAINER" | sed 's|.*/||' | sed 's|:.*||')
         ARTIFACT_BROWSER_URL="[View in Artifact Browser](${ARTIFACT_BROWSER_BASE_URL}/${REPO_NAME}/${TEST_NAME}/)"
