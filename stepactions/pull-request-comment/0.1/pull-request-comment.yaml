@@ -71,6 +71,20 @@ spec:
       value: $(workspaces.basic-auth.bound)
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
       value: $(workspaces.basic-auth.path)
+    - name: TEST_NAME
+      value: "$(params.test-name)"
+    - name: PR_AUTHOR
+      value: "$(params.pull-request-author)"
+    - name: OCI_STORAGE_CONTAINER
+      value: "$(params.oci-container)"
+    - name: GIT_ORG
+      value: "$(params.git-org)"
+    - name: GIT_REPO
+      value: "$(params.git-repo)"
+    - name: PR_NUMBER
+      value: "$(params.pull-request-number)"
+    - name: PIPELINE_RUN_AGGREGATE_STATUS
+      value: "$(params.pipeline-aggregate-status)"
   workingDir: /workspace
   script: |
     #!/bin/sh
@@ -81,14 +95,6 @@ spec:
       echo "PipelineRun was cancelled. Skipping sending a comment to the PR."
       exit 0
     fi
-
-    export TEST_NAME="$(params.test-name)"
-    export PR_AUTHOR="$(params.pull-request-author)"
-    export OCI_STORAGE_CONTAINER="$(params.oci-container)"
-    export GIT_ORG="$(params.git-org)"
-    export GIT_REPO="$(params.git-repo)"
-    export PR_NUMBER="$(params.pull-request-number)"
-    export PIPELINE_RUN_AGGREGATE_STATUS="$(params.pipeline-aggregate-status)"
 
 
     if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
