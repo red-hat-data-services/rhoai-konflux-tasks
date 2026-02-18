@@ -72,9 +72,6 @@ spec:
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
       value: $(workspaces.basic-auth.path)
   workingDir: /workspace
-  volumeMounts:
-    - name: konflux-test-infra-volume
-      mountPath: /usr/local/konflux-test-infra
   script: |
     #!/bin/sh
 
@@ -93,16 +90,16 @@ spec:
     export PR_NUMBER="$(params.pull-request-number)"
     export PIPELINE_RUN_AGGREGATE_STATUS="$(params.pipeline-aggregate-status)"
 
-    GITHUB_TOKEN="$(cat /usr/local/konflux-test-infra/github-bot-commenter-token)"
-    if [ -z "$GITHUB_TOKEN" ]; then
-        echo "Error: GITHUB_TOKEN env is not set."
-        exit 1
-    fi
+
     if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
       echo "configuring gh cli"
       ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
       GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
       echo "taking github token from Konflux bot"
+    fi
+    if [ -z "$GITHUB_TOKEN" ]; then
+        echo "Error: GITHUB_TOKEN env is not set."
+        exit 1
     fi
     # Get the authenticated user's login
     USER_LOGIN=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
