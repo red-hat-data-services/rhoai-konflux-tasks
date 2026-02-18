@@ -67,6 +67,10 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.annotations['pac.test.appstudio.openshift.io/log-url']
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+      value: $(workspaces.basic-auth.bound)
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+      value: $(workspaces.basic-auth.path)
   workingDir: /workspace
   volumeMounts:
     - name: konflux-test-infra-volume
@@ -94,7 +98,12 @@ spec:
         echo "Error: GITHUB_TOKEN env is not set."
         exit 1
     fi
-
+    if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+      echo "configuring gh cli"
+      ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
+      GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+      echo "taking github token from Konflux bot"
+    fi
     # Get the authenticated user's login
     USER_LOGIN=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
         "https://api.github.com/user" | jq -r '.login')
@@ -124,8 +133,8 @@ spec:
 
     # If the pipeline succeeded, do not post a new comment and exit
     # if [[ "$PIPELINE_RUN_AGGREGATE_STATUS" == "Succeeded" ]]; then
-    #    echo "[INFO]: Pipeline finished successfully. No new comment will be posted."
-    #    exit 0
+    #     echo "[INFO]: Pipeline finished successfully. No new comment will be posted."
+    #     exit 0
     # fi
 
     # Construct build/integration console url based on whether we are running this task inside build-definitions build pipeline or konflux integration test pipeline
@@ -188,4 +197,5 @@ spec:
         echo "[INFO] Comment posted successfully."
     else
         echo "[ERROR] Failed to post comment. Response: $RESPONSE"
+        echo "https://api.github.com/repos/$GIT_ORG/$GIT_REPO/issues/$PR_NUMBER/comments"
     fi
