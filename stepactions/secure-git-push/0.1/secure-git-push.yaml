@@ -79,6 +79,7 @@ spec:
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
               git config core.sparseCheckout true
               git config core.sparseCheckoutCone false
+              mkdir -p .git/info/
               echo "${SPARSE_FILE_PATH}" >> .git/info/sparse-checkout
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
