@@ -21,6 +21,9 @@ spec:
     - name: dest-path
       type: string
       default: ""
+    - name: artifacts-dir-path
+      type: string
+      default: ""
     - name: always-pass
       type: string
       default: "false"
@@ -34,6 +37,8 @@ spec:
       value: "$(params.sparse-file-path)"
     - name: DEST_PATH
       value: "$(params.dest-path)"
+    - name: ARTIFACTS_DIR_PATH
+      value: "$(params.artifacts-dir-path)"
     - name: ALWAYS_PASS
       value: "$(params.always-pass)"
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
@@ -49,6 +54,7 @@ spec:
     echo "SPARSE_FILE_PATH: $SPARSE_FILE_PATH"
     echo "DEST_PATH: $DEST_PATH"
     echo "ALWAYS_PASS: $ALWAYS_PASS"
+    echo "ARTIFACTS_DIR_PATH: $ARTIFACTS_DIR_PATH"
 
     main() {
           if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
@@ -76,6 +82,14 @@ spec:
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
           git checkout ${REPO_BRANCH}
+    
+          if [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
+            cd ${ARTIFACTS_DIR_PATH}
+            for f in *.tar.gz; do
+              tar -xzf "$f"
+            done
+            rm -rf *.tar.gz
+          fi
 
     }
 

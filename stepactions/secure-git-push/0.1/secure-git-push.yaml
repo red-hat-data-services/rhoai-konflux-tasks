@@ -92,10 +92,7 @@ spec:
     
           
           cd ${SOURCE_PATH}
-          for f in *.tar.gz; do
-            tar -xzf "$f"
-          done
-          rm -rf *.tar.gz
+
           
           # Scan the working directory using leaktk-scanner and remove problematic files
           log_filename="leaktk-scan-$(date +%s).log"
