@@ -32,10 +32,6 @@ spec:
       value: $(workspaces.basic-auth.bound)
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
       value: $(workspaces.basic-auth.path)
-    - name: TASK_NAME
-      value: $(context.task.name)
-    - name: PIPELINERUN_NAME
-      value: "$(params.pipelinerun-name)"
   script: |
     #!/bin/bash
     set -e
