@@ -97,18 +97,19 @@ spec:
           log_filename="leaktk-scan-$(date +%s).log"
           leaktk-scanner scan --kind Files --resource . 2>> $log_filename | leaktk-remove-files . &>> $log_filename
     
-          ARTIFACT_DIR_NAME=$(basename "$(pwd)")
-          cd ../
+          # ARTIFACT_DIR_NAME=$(basename "$(pwd)")
+          # cd ../
     
           echo "TASK_NAME=${TASK_NAME}"
           echo "PIPELINERUN_NAME=${PIPELINERUN_NAME}"
     
           TASK_NAME=${TASK_NAME/${PIPELINERUN_NAME}-/}
-          tar -czf "${TASK_NAME}.tar.gz" ${ARTIFACT_DIR_NAME}
-          ls -l "${TASK_NAME}.tar.gz"
-    
           mkdir -p ${WORK_DIR}/${DEST_PATH}
-          cp "${TASK_NAME}.tar.gz" ${WORK_DIR}/${DEST_PATH}
+          tar -czf "${WORK_DIR}/${DEST_PATH}/${TASK_NAME}.tar.gz" .
+          ls -l "${WORK_DIR}/${DEST_PATH}/${TASK_NAME}.tar.gz"
+    
+          
+          # cp "${TASK_NAME}.tar.gz" ${WORK_DIR}/${DEST_PATH}
 
           cd ${WORK_DIR}
           #push the changes to remote
