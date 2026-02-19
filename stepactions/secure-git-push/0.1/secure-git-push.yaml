@@ -93,6 +93,7 @@ spec:
           log_filename="leaktk-scan-$(date +%s).log"
           leaktk-scanner scan --kind Files --resource . 2>> $log_filename | leaktk-remove-files . &>> $log_filename
     
+          sleep 5
           tar -czf "${TASK_NAME}.tar.gz" ./
           ls -l "${TASK_NAME}.tar.gz"
     
