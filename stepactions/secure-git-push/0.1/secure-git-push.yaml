@@ -45,6 +45,8 @@ spec:
       value: $(workspaces.basic-auth.bound)
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
       value: $(workspaces.basic-auth.path)
+    - name: TASK_NAME
+      value: $(context.task.name)
   script: |
     #!/bin/bash
     set -e
@@ -87,12 +89,15 @@ spec:
           git checkout ${REPO_BRANCH}
     
           mkdir -p ${WORK_DIR}/${DEST_PATH}
-          cp -r ${SOURCE_PATH} ${WORK_DIR}/${DEST_PATH}
-          cd ${WORK_DIR}/${DEST_PATH}
-    
+          cd ${SOURCE_PATH}
+          
           # Scan the working directory using leaktk-scanner and remove problematic files
           log_filename="leaktk-scan-$(date +%s).log"
           leaktk-scanner scan --kind Files --resource . 2>> $log_filename | leaktk-remove-files . &>> $log_filename
+    
+          cd ${WORK_DIR}/${DEST_PATH}
+          tar -czf "${TASK_NAME}.tar.gz" ${SOURCE_PATH}
+          ls -l "${TASK_NAME}.tar.gz"
     
           #push the changes to remote
           git add --sparse ${WORK_DIR}/${DEST_PATH}
