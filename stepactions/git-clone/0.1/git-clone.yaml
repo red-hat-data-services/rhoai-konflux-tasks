@@ -1,7 +1,7 @@
 apiVersion: tekton.dev/v1alpha1
 kind: StepAction
 metadata:
-  name: secure-git-push
+  name: git-clone
   labels:
     upstream-usable: "true"
 spec:
@@ -18,15 +18,12 @@ spec:
     - name: sparse-file-path
       type: string
       default: ""
-    - name: source-path
-      type: string
     - name: dest-path
       type: string
+      default: ""
     - name: always-pass
       type: string
       default: "false"
-    - name: pipelinerun-name
-      type: string
   workingDir: /workspace/odh-ci-artifacts
   env:
     - name: REPO_PATH
@@ -41,25 +38,17 @@ spec:
       value: "$(params.dest-path)"
     - name: ALWAYS_PASS
       value: "$(params.always-pass)"
-    - name: WORK_DIR
-      value: /workspace/odh-ci-artifacts
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
       value: $(workspaces.basic-auth.bound)
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
       value: $(workspaces.basic-auth.path)
-    - name: TASK_NAME
-      value: $(context.task.name)
-    - name: PIPELINERUN_NAME
-      value: "$(params.pipelinerun-name)"
   script: |
     #!/bin/bash
     set -e
 
-    echo "WORK_DIR: $WORK_DIR"
     echo "REPO_PATH: $REPO_PATH"
     echo "REPO_BRANCH: $REPO_BRANCH"
     echo "SPARSE_FILE_PATH: $SPARSE_FILE_PATH"
-    echo "SOURCE_PATH: $SOURCE_PATH"
     echo "DEST_PATH: $DEST_PATH"
     echo "ALWAYS_PASS: $ALWAYS_PASS"
 
@@ -74,13 +63,13 @@ spec:
               exit 1
           fi
     
-          mkdir -p ${WORK_DIR}
-          cd ${WORK_DIR}
+          mkdir -p ${DEST_PATH}
+          cd ${DEST_PATH}
           git config --global init.defaultBranch ${REPO_BRANCH}
           git config --global user.name "OpenShift-AI-DevOps"
           git config --global user.email "openshift-ai-devops@redhat.com"
           git init
-          git config --global --add safe.directory ${WORK_DIR}
+          git config --global --add safe.directory ${DEST_PATH}
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
               git config core.sparseCheckout true
@@ -89,32 +78,6 @@ spec:
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
           git checkout ${REPO_BRANCH}
-    
-          
-          cd ${SOURCE_PATH}
-          
-          # Scan the working directory using leaktk-scanner and remove problematic files
-          log_filename="leaktk-scan-$(date +%s).log"
-          leaktk-scanner scan --kind Files --resource . 2>> $log_filename | leaktk-remove-files . &>> $log_filename
-    
-          ARTIFACT_DIR_NAME=$(basename "$(pwd)")
-          cd ../
-    
-          echo "TASK_NAME=${TASK_NAME}"
-          echo "PIPELINERUN_NAME=${PIPELINERUN_NAME}"
-    
-          TASK_NAME=${TASK_NAME/${PIPELINERUN_NAME}-/}
-          tar -czf "${TASK_NAME}.tar.gz" ${ARTIFACT_DIR_NAME}
-          ls -l "${TASK_NAME}.tar.gz"
-    
-          mkdir -p ${WORK_DIR}/${DEST_PATH}
-          cp "${TASK_NAME}.tar.gz" ${WORK_DIR}/${DEST_PATH}
-
-          cd ${WORK_DIR}
-          #push the changes to remote
-          git add --sparse ${WORK_DIR}/${DEST_PATH}
-          git commit -m "Updating CI Artifacts in ${TASK_NAME}"
-          git push
 
     }
 
