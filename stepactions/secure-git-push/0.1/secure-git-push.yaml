@@ -105,6 +105,7 @@ spec:
           echo "PIPELINERUN_NAME=${PIPELINERUN_NAME}"
     
           TASK_NAME=${TASK_NAME/${PIPELINERUN_NAME}-/}
+          git pull --no-edit origin ${REPO_BRANCH}
           mkdir -p ${WORK_DIR}/${DEST_PATH}
           tar -czf "${WORK_DIR}/${DEST_PATH}/${TASK_NAME}.tar.gz" .
           ls -l "${WORK_DIR}/${DEST_PATH}/${TASK_NAME}.tar.gz"
@@ -116,6 +117,7 @@ spec:
           #push the changes to remote
           git add --sparse ${WORK_DIR}/${DEST_PATH}
           git commit -m "Updating CI Artifacts in ${TASK_NAME}"
+          git pull --no-edit origin ${REPO_BRANCH}
           git push
 
     }
