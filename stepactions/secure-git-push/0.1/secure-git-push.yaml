@@ -59,8 +59,7 @@ spec:
 
     main() {
           if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
-            echo "configuring gh cli"
-            ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
+            echo "configuring gh token"
             GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
             echo "taking github token from Konflux bot"
           fi
