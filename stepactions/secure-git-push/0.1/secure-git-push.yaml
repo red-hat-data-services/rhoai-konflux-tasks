@@ -74,6 +74,7 @@ spec:
           git config --global user.name "OpenShift-AI-DevOps"
           git config --global user.email "openshift-ai-devops@redhat.com"
           git init
+          git config --global --add safe.directory ${WORK_DIR}
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
               git config core.sparseCheckout true
