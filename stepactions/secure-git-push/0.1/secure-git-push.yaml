@@ -13,7 +13,7 @@ spec:
   params:
     - name: artifact-dir
       type: string
-    - name: repo-url
+    - name: repo-path
       type: string
     - name: repo-branch
       type: string
@@ -34,7 +34,7 @@ spec:
   workingDir: $(params.workdir-path)
   env:
     - name: REPO_PATH
-      value: "$(params.repo-url)"
+      value: "$(params.repo-path)"
     - name: REPO_BRANCH
       value: "$(params.repo-branch)"
     - name: SPARSE_FILE_PATH
