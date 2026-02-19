@@ -11,8 +11,6 @@ spec:
     Then it pushes the working directory contents to a specified git repo.
   image: quay.io/konflux-qe-incubator/konflux-qe-tools:latest
   params:
-    - name: artifact-dir
-      type: string
     - name: repo-path
       type: string
     - name: repo-branch
