@@ -25,7 +25,7 @@ spec:
     - name: always-pass
       type: string
       default: "false"
-  workingDir: /workspace
+  workingDir: /workspace/odh-ci-artifacts
   env:
     - name: REPO_PATH
       value: "$(params.repo-path)"
@@ -74,10 +74,13 @@ spec:
           git config --global user.name "OpenShift-AI-DevOps"
           git config --global user.email "openshift-ai-devops@redhat.com"
           git init
+          ls -la
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
               git config core.sparseCheckout true
               git config core.sparseCheckoutCone false
+              pwd
+              ls -la
               mkdir -p .git/info/
               echo "${SPARSE_FILE_PATH}" >> .git/info/sparse-checkout
           fi
