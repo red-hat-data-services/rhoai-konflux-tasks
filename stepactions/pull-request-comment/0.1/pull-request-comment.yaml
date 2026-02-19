@@ -155,7 +155,7 @@ spec:
     TEST_RESULTS_ANALYSIS=$(cat analysis.md || echo "\<not enabled\>")
 
     # Generate artifact browser link if URL is provided
-    ARTIFACT_BROWSER_URL=$(echo "\<not enabled\>")
+    # ARTIFACT_BROWSER_URL=$(echo "\<not enabled\>")
     if [ -n "${ARTIFACT_BROWSER_URL}" ]; then
         # Use the provided artifact browser URL
         export ARTIFACT_BROWSER_BASE_URL="${ARTIFACT_BROWSER_URL}"
