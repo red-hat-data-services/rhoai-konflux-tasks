@@ -82,6 +82,8 @@ spec:
               echo "${SPARSE_FILE_PATH}" >> .git/info/sparse-checkout
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
+          pwd
+          ls .git/
           git checkout ${REPO_BRANCH}
     
           mkdir -p ${GIT_DIR}/${DEST_PATH}
