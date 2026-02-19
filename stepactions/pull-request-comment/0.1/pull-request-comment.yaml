@@ -165,14 +165,11 @@ spec:
     fi
 
     PR_COMMENT=$(cat <<EOF
-    @${PR_AUTHOR}: The following test has ${PIPELINE_RUN_AGGREGATE_STATUS}, say **/retest** to rerun failed tests.
-
-    | PipelineRun Name | Status | Rerun command | Build Log | Test Log |
-    |------------------|--------|---------------|-----------|----------|
-    | \`$TEST_NAME\`    | **$PIPELINE_RUN_AGGREGATE_STATUS** | \`/retest\` | [View Pipeline Log]($BUILD_CONSOLE_URL) | [View Test Logs]($INTEGRATION_TEST_CONSOLE_URL) |
-
-    ### Inspecting Test Artifacts
-    To inspect your test artifacts, follow these steps:
+    @${PR_AUTHOR}: The following test has ${PIPELINE_RUN_AGGREGATE_STATUS}:
+    ### OCI Artifact Browser URL
+    ${ARTIFACT_BROWSER_URL}
+    ### Inspecting Test Artifacts Manually
+    To inspect your test artifacts manually, follow these steps:
     1. Install **ORAS** (see the [ORAS installation guide](https://oras.land/docs/installation)).
     2. Download artifacts with the following commands:
 
@@ -181,10 +178,6 @@ spec:
     cd oras-artifacts
     oras pull $OCI_STORAGE_CONTAINER
     \`\`\`
-    ### Test results analysis
-    ${TEST_RESULTS_ANALYSIS}
-    ### OCI Artifact Browser URL
-    ${ARTIFACT_BROWSER_URL}
     EOF
     )
     # Combine body components into the final JSON body
