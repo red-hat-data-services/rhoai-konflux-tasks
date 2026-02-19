@@ -47,6 +47,8 @@ spec:
       value: $(workspaces.basic-auth.path)
     - name: TASK_NAME
       value: $(context.task.name)
+    - name: PIPELINERUN_NAME
+      value: $(context.pipelineRun.name)
   script: |
     #!/bin/bash
     set -e
@@ -95,6 +97,7 @@ spec:
     
           ARTIFACT_DIR_NAME=$(basename "$(pwd)")
           cd ../
+          TASK_NAME=${TASK_NAME/${PIPELINERUN_NAME}-/}
           tar -czf "${TASK_NAME}.tar.gz" ${ARTIFACT_DIR_NAME}
           ls -l "${TASK_NAME}.tar.gz"
     
