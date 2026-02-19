@@ -32,8 +32,6 @@ spec:
       value: "$(params.repo-branch)"
     - name: SPARSE_FILE_PATH
       value: "$(params.sparse-file-path)"
-    - name: SOURCE_PATH
-      value: "$(params.source-path)"
     - name: DEST_PATH
       value: "$(params.dest-path)"
     - name: ALWAYS_PASS
