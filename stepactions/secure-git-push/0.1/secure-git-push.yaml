@@ -25,6 +25,8 @@ spec:
     - name: always-pass
       type: string
       default: "false"
+    - name: pipelinerun-name
+      type: string
   workingDir: /workspace/odh-ci-artifacts
   env:
     - name: REPO_PATH
@@ -48,7 +50,7 @@ spec:
     - name: TASK_NAME
       value: $(context.task.name)
     - name: PIPELINERUN_NAME
-      value: $(context.pipeline.name)
+      value: "$(params.pipelinerun-name)"
   script: |
     #!/bin/bash
     set -e
