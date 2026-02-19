@@ -164,6 +164,12 @@ spec:
         ARTIFACT_BROWSER_URL="[View in Artifact Browser](${ARTIFACT_BROWSER_BASE_URL}/${REPO_NAME}/${TEST_NAME}/)"
     fi
 
+    PR_AUTHOR=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/$GIT_ORG/$GIT_REPO/pulls/$PR_NUMBER" \
+      | jq -r '.user.login')
+    echo "PR_AUTHOR=$PR_AUTHOR"
+    
     PR_COMMENT=$(cat <<EOF
     @${PR_AUTHOR}: The following test has ${PIPELINE_RUN_AGGREGATE_STATUS}:
     ### OCI Artifact Browser URL
@@ -198,8 +204,4 @@ spec:
         echo "https://api.github.com/repos/$GIT_ORG/$GIT_REPO/issues/$PR_NUMBER/comments"
     fi
     
-    PR_AUTHOR=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-      -H "Accept: application/vnd.github+json" \
-      "https://api.github.com/repos/$GIT_ORG/$GIT_REPO/pulls/$PR_NUMBER" \
-      | jq -r '.user.login')
-    echo "PR_AUTHOR=$PR_AUTHOR"
+
