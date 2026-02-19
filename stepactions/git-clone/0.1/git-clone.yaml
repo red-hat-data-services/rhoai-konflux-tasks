@@ -6,9 +6,7 @@ metadata:
     upstream-usable: "true"
 spec:
   description: |
-    This StepAction scans specified directory (workingDir) using [leaktk-scanner CLI](https://github.com/leaktk/scanner)
-    and deletes files containing sensitive information (credentials, certificates) that shouldn't be exposed to public.
-    Then it pushes the working directory contents to a specified git repo.
+    This StepAction scans is to clone a given repo on a given location with sparse checkout enabled
   image: quay.io/konflux-qe-incubator/konflux-qe-tools:latest
   params:
     - name: repo-path

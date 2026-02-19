@@ -1,0 +1,80 @@
+apiVersion: tekton.dev/v1alpha1
+kind: StepAction
+metadata:
+  name: cleanup-git-repo
+  labels:
+    upstream-usable: "true"
+spec:
+  description: |
+    This StepAction cleans up the artifact dir from remote repo
+  image: quay.io/konflux-qe-incubator/konflux-qe-tools:latest
+  params:
+    - name: work-dir
+      type: string
+    - name: artifacts-dir-path
+      type: string
+    - name: dir-to-be-deleted
+      type: string
+    - name: always-pass
+      type: string
+      default: "true"
+  workingDir: "$(params.work-dir)"
+  env:
+    - name: WORK_DIR
+      value: "$(params.work-dir)"
+    - name: DIR_TO_BE_DELETED
+      value: "$(params.dir-to-be-deleted)"
+    - name: ARTIFACTS_DIR_PATH
+      value: "$(params.artifacts-dir-path)"
+    - name: ALWAYS_PASS
+      value: "$(params.always-pass)"
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+      value: $(workspaces.basic-auth.bound)
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+      value: $(workspaces.basic-auth.path)
+    - name: TASK_NAME
+      value: $(context.task.name)
+    - name: PIPELINERUN_NAME
+      value: "$(params.pipelinerun-name)"
+  script: |
+    #!/bin/bash
+    set -e
+
+    echo "WORK_DIR: $WORK_DIR"
+    echo "ARTIFACTS_DIR_PATH: $ARTIFACTS_DIR_PATH"
+    echo "DIR_TO_BE_DELETED: $DIR_TO_BE_DELETED"
+    echo "ALWAYS_PASS: $ALWAYS_PASS"
+
+    main() {
+          if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+            echo "configuring gh token"
+            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+            echo "taking github token from Konflux bot"
+          fi
+          if [ -z "$GITHUB_TOKEN" ]; then
+              echo "Error: GITHUB_TOKEN env is not set."
+              exit 1
+          fi
+    
+          cd ${WORK_DIR}/${ARTIFACTS_DIR_PATH}
+    
+          git config --global user.name "OpenShift-AI-DevOps"
+          git config --global user.email "openshift-ai-devops@redhat.com"
+          git config --global --add safe.directory ${WORK_DIR}
+    
+          # cleanup the dir
+          rm -rf ${DIR_TO_BE_DELETED}
+
+          #push the changes to remote
+          cd ${WORK_DIR}
+          git add --sparse ${ARTIFACTS_DIR_PATH}
+          git commit -m "Cleaning up ${DIR_TO_BE_DELETED}"
+          git push
+
+    }
+
+    if [ "$ALWAYS_PASS" == "true" ]; then
+      main || true
+    else
+      main
+    fi
