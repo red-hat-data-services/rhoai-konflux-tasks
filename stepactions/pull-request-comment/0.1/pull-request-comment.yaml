@@ -197,3 +197,9 @@ spec:
         echo "[ERROR] Failed to post comment. Response: $RESPONSE"
         echo "https://api.github.com/repos/$GIT_ORG/$GIT_REPO/issues/$PR_NUMBER/comments"
     fi
+    
+    PR_AUTHOR=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/repos/$GIT_ORG/$GIT_REPO/pulls/$PR_NUMBER" \
+      | jq -r '.user.login')
+    echo "PR_AUTHOR=$PR_AUTHOR"
