@@ -39,7 +39,7 @@ spec:
       value: "$(params.dest-path)"
     - name: ALWAYS_PASS
       value: "$(params.always-pass)"
-    - name: GIT_DIR
+    - name: WORK_DIR
       value: /workspace/odh-ci-artifacts
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
       value: $(workspaces.basic-auth.bound)
@@ -49,7 +49,7 @@ spec:
     #!/bin/bash
     set -e
 
-    echo "GIT_DIR: $GIT_DIR"
+    echo "WORK_DIR: $WORK_DIR"
     echo "REPO_PATH: $REPO_PATH"
     echo "REPO_BRANCH: $REPO_BRANCH"
     echo "SPARSE_FILE_PATH: $SPARSE_FILE_PATH"
@@ -68,20 +68,16 @@ spec:
               exit 1
           fi
     
-          mkdir -p ${GIT_DIR}
-          cd ${GIT_DIR}
+          mkdir -p ${WORK_DIR}
+          cd ${WORK_DIR}
           git config --global init.defaultBranch ${REPO_BRANCH}
           git config --global user.name "OpenShift-AI-DevOps"
           git config --global user.email "openshift-ai-devops@redhat.com"
           git init
-          ls -la
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
               git config core.sparseCheckout true
               git config core.sparseCheckoutCone false
-              pwd
-              ls -la
-              mkdir -p .git/info/
               echo "${SPARSE_FILE_PATH}" >> .git/info/sparse-checkout
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
@@ -89,16 +85,16 @@ spec:
           ls .git/
           git checkout ${REPO_BRANCH}
     
-          mkdir -p ${GIT_DIR}/${DEST_PATH}
-          cp -r ${SOURCE_PATH} ${GIT_DIR}/${DEST_PATH}
-          cd ${GIT_DIR}/${DEST_PATH}
+          mkdir -p ${WORK_DIR}/${DEST_PATH}
+          cp -r ${SOURCE_PATH} ${WORK_DIR}/${DEST_PATH}
+          cd ${WORK_DIR}/${DEST_PATH}
     
           # Scan the working directory using leaktk-scanner and remove problematic files
           log_filename="leaktk-scan-$(date +%s).log"
           leaktk-scanner scan --kind Files --resource . 2>> $log_filename | leaktk-remove-files . &>> $log_filename
     
           #push the changes to remote
-          git add --sparse ${GIT_DIR}/${DEST_PATH}
+          git add --sparse ${WORK_DIR}/${DEST_PATH}
           git commit -m "Updating CI Artifacts in {DEST_PATH}"
           git push
 
