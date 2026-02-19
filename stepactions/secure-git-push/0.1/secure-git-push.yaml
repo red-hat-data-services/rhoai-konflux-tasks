@@ -25,10 +25,6 @@ spec:
     - name: always-pass
       type: string
       default: "false"
-  volumeMounts:
-  - name: $(params.credentials-volume-name)
-    mountPath: /home/tool-box/.docker/config.json
-    subPath: oci-storage-dockerconfigjson
   workingDir: $(params.workdir-path)
   env:
     - name: REPO_PATH
@@ -45,6 +41,10 @@ spec:
       value: "$(params.always-pass)"
     - name: GIT_DIR
       value: /workspace/odh-ci-artifacts
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+      value: $(workspaces.basic-auth.bound)
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+      value: $(workspaces.basic-auth.path)
   script: |
     #!/bin/bash
     set -e
@@ -58,7 +58,17 @@ spec:
     echo "ALWAYS_PASS: $ALWAYS_PASS"
 
     main() {
-
+          if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+            echo "configuring gh cli"
+            ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
+            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+            echo "taking github token from Konflux bot"
+          fi
+          if [ -z "$GITHUB_TOKEN" ]; then
+              echo "Error: GITHUB_TOKEN env is not set."
+              exit 1
+          fi
+    
           mkdir -p ${GIT_DIR}
           cd ${GIT_DIR}
           git config --global init.defaultBranch ${REPO_BRANCH}
