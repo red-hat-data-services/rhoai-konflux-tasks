@@ -111,7 +111,7 @@ spec:
           cd ${WORK_DIR}
           #push the changes to remote
           git add --sparse ${WORK_DIR}/${DEST_PATH}
-          git commit -m "Updating CI Artifacts in ${DEST_PATH}"
+          git commit -m "Updating CI Artifacts in ${TASK_NAME}"
           git push
 
     }
