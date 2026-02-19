@@ -86,7 +86,9 @@ spec:
           if [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
             cd ${ARTIFACTS_DIR_PATH}
             for f in *.tar.gz; do
-              tar -xzf "$f"
+              dir="${f%.tar.gz}"
+              mkdir -p "$dir"
+              tar -xzf "$f" -C "$dir"
             done
             rm -rf *.tar.gz
           fi
