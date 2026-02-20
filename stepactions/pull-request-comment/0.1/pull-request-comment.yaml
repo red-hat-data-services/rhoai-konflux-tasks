@@ -91,7 +91,7 @@ spec:
       valueFrom:
         secretKeyRef:
           name: odh-github-secret
-          key: build-metadata-token
+          key: commenter-token
   workingDir: /workspace
   script: |
     #!/bin/sh
