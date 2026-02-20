@@ -43,6 +43,11 @@ spec:
       value: $(workspaces.basic-auth.bound)
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
       value: $(workspaces.basic-auth.path)
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: odh-github-secret
+          key: build-metadata-token
   script: |
     #!/bin/bash
     set -e
@@ -57,7 +62,7 @@ spec:
     main() {
           if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
             echo "configuring gh token"
-            GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+            # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
             echo "taking github token from Konflux bot"
           fi
           if [ -z "$GITHUB_TOKEN" ]; then
