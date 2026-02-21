@@ -97,7 +97,8 @@ spec:
     #!/bin/sh
 
     if [[ -e "/workspace/status" && $(cat /workspace/status) == "SKIP" ]]; then
-        echo "Skipping this step as decided in previous steps"
+        echo "Skipping this step as decided in previous steps.."
+        exit 0
     fi
     
     PIPELINE_STATUS=$(kubectl get pipelinerun ${TEST_NAME} -o jsonpath='{.status.conditions[0].reason}')
