@@ -86,10 +86,11 @@ spec:
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
           git checkout ${REPO_BRANCH}
-          
+          ls -l
+          echo "checking if the CI artifacts exist.."
           if [[ ! -e "${SPARSE_FILE_PATH}" ]]; then
               echo "SKIP" > /workspace/status
-              echo "exiting since no ci artifacts found"
+              echo "exiting since no CI artifacts found"
               exit 0
           fi
           
