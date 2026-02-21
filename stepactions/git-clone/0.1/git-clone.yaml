@@ -87,6 +87,7 @@ spec:
           git fetch --depth=1 origin ${REPO_BRANCH}
           git checkout ${REPO_BRANCH}
           ls -l
+          ls -l test-artifacts
           echo "checking if the CI artifacts exist.."
           if [[ ! -e "${SPARSE_FILE_PATH}" ]]; then
               echo "SKIP" > /workspace/status
