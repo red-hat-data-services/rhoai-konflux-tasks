@@ -91,7 +91,7 @@ spec:
           ls -l
           ls -l test-artifacts
           echo "checking if the CI artifacts exist.."
-          if [[ ! -e "${SPARSE_FILE_PATH}" ]]; then
+          if [[ ! -d "${SPARSE_FILE_PATH}" ]] || [[ -d "${SPARSE_FILE_PATH}" && -z "$(ls -A ${SPARSE_FILE_PATH})" ]]; then
               echo "SKIP" > /workspace/status
               echo "exiting since no CI artifacts found"
               exit 0
