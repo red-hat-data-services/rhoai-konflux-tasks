@@ -96,6 +96,10 @@ spec:
   script: |
     #!/bin/sh
 
+    if [[ -e "/workspace/status" && $(cat status) == "SKIP" ]]; then
+        echo "Skipping this step as decided in previous steps"
+    fi
+    
     PIPELINE_STATUS=$(kubectl get pipelinerun ${TEST_NAME} -o jsonpath='{.status.conditions[0].reason}')
 
     if [ "${PIPELINE_STATUS}" = "CancelledRunningFinally" ]; then

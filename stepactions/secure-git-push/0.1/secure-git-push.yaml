@@ -69,6 +69,7 @@ spec:
     echo "ALWAYS_PASS: $ALWAYS_PASS"
 
     main() {
+              
           if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
             echo "configuring gh token"
             # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
@@ -126,7 +127,10 @@ spec:
           git push
 
     }
-
+    
+    if [[ -e "/workspace/status" && $(cat status) == "SKIP" ]]; then
+        echo "Skipping this step as decided in previous steps"
+    fi
     if [ "$ALWAYS_PASS" == "true" ]; then
       main || true
     else

@@ -60,6 +60,7 @@ spec:
     echo "ARTIFACTS_DIR_PATH: $ARTIFACTS_DIR_PATH"
 
     main() {
+    
           if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
             echo "configuring gh token"
             # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
@@ -85,7 +86,11 @@ spec:
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
           git checkout ${REPO_BRANCH}
-    
+          
+          if [[ ! -e "${SPARSE_FILE_PATH}" ]]; then
+              echo "SKIP" > /workspace/status
+          fi
+          
           if [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
             cd ${ARTIFACTS_DIR_PATH}
             for f in *.tar.gz; do
