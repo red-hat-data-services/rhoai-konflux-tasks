@@ -90,7 +90,7 @@ spec:
       done
     }
     
-    if [[ -e "/workspace/status" && $(cat status) == "SKIP" ]]; then
+    if [[ -e "/workspace/status" && $(cat /workspace/status) == "SKIP" ]]; then
         echo "Skipping this step as decided in previous steps"
     fi
     if [ "$ALWAYS_PASS" == "true" ]; then

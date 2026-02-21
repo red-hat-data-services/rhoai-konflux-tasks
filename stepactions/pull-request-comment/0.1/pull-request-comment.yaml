@@ -96,7 +96,7 @@ spec:
   script: |
     #!/bin/sh
 
-    if [[ -e "/workspace/status" && $(cat status) == "SKIP" ]]; then
+    if [[ -e "/workspace/status" && $(cat /workspace/status) == "SKIP" ]]; then
         echo "Skipping this step as decided in previous steps"
     fi
     
