@@ -23,7 +23,7 @@ spec:
       description: Name of the volume that mounts the secret with "oci-storage-dockerconfigjson" key containing registry credentials in .dockerconfigjson format
     - name: oci-tag-expiration
       type: string
-      default: 1y
+      default: 30d
       description: OCI artifact tag expiration
     - name: always-pass
       type: string
