@@ -93,6 +93,9 @@ spec:
               echo "SKIP" > /workspace/status
               echo "exiting since no CI artifacts found"
               exit 0
+          else
+            echo "checking contents of ${SPARSE_FILE_PATH}"
+            ls -l ${SPARSE_FILE_PATH}
           fi
           
           if [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
