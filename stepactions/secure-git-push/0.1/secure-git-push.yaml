@@ -127,7 +127,11 @@ spec:
           git push
 
     }
-    
+    if [[ ! -d "${SOURCE_PATH}" ]] || [[ -d "${SOURCE_PATH}" && -z "$(ls -A ${SOURCE_PATH})" ]]; then
+        echo "SKIP" > /workspace/status
+        echo "exiting since no CI artifacts found.."
+        exit 0
+    fi
     if [ "$ALWAYS_PASS" == "true" ]; then
       main || true
     else
