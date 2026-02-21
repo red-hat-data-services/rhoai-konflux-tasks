@@ -89,6 +89,7 @@ spec:
           
           if [[ ! -e "${SPARSE_FILE_PATH}" ]]; then
               echo "SKIP" > /workspace/status
+              echo "exiting since no ci artifacts found"
               exit 0
           fi
           
