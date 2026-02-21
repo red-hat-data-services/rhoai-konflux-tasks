@@ -89,6 +89,7 @@ spec:
           
           if [[ ! -e "${SPARSE_FILE_PATH}" ]]; then
               echo "SKIP" > /workspace/status
+              exit 0
           fi
           
           if [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
