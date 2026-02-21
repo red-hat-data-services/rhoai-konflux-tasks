@@ -80,9 +80,11 @@ spec:
           git config --global --add safe.directory ${DEST_PATH}
           git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
+              echo "enabling sparse checkout.."
               git config core.sparseCheckout true
               git config core.sparseCheckoutCone false
               echo "${SPARSE_FILE_PATH}" >> .git/info/sparse-checkout
+              cat .git/info/sparse-checkout
           fi
           git fetch --depth=1 origin ${REPO_BRANCH}
           git checkout ${REPO_BRANCH}
