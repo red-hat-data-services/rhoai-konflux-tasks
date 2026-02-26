@@ -1,0 +1,265 @@
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: prefetch-operand-manifests-oci-ta
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/tags: image-build, konflux
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  description: |-
+    Task that prefetches all the deployment manifests for all the operands of the ODH/RHODS operator. 
+    It is a tekton equivalent of the existing operator-processor github workflow.
+    It ensures to follow the oci-ta standards to gel well in the Konflux infrastructure framework.
+  params:
+    - name: SOURCE_ARTIFACT
+      description: The Trusted Artifact URI pointing to the artifact with
+        the application source code.
+      type: string
+    - name: caTrustConfigMapKey
+      description: The name of the key in the ConfigMap that contains the
+        CA bundle data.
+      type: string
+      default: ca-bundle.crt
+    - name: caTrustConfigMapName
+      description: The name of the ConfigMap to read CA bundle data from.
+      type: string
+      default: trusted-ca
+    - name: ociArtifactExpiresAfter
+      description: Expiration date for the trusted artifacts created in the
+        OCI repository. An empty string means the artifacts do not expire.
+      type: string
+      default: "1d"
+    - name: ociStorage
+      description: The OCI repository where the Trusted Artifacts are stored.
+      type: string
+    - name: utilsRepoUrl
+      description: Git URL of the RHOAI-Konflux-Automation repo
+      type: string
+      default: "https://github.com/red-hat-data-services/RHOAI-Konflux-Automation.git"
+    - name: utilsRepoBranch
+      description: Git branch of the RHOAI-Konflux-Automation repo
+      type: string
+      default: "main"
+    - name: buildConfigRepoUrl
+      description: Git URL of the Build-Config repo
+      type: string
+      default: "https://github.com/opendatahub-io/ODH-Build-Config.git"
+    - name: buildConfigRepoBranch
+      description: Git branch of the Build-Config repo
+      type: string
+      default: "main"
+    - name: buildVersionTag
+      description: Image tag of operand images to be sought by operator-processor
+      type: string
+      default: "latest"
+  results:
+    - name: CACHI2_ARTIFACT
+      description: The Trusted Artifact URI pointing to the artifact with
+        the prefetched dependencies.
+      type: string
+    - name: SOURCE_ARTIFACT
+      description: The Trusted Artifact URI pointing to the artifact with
+        the application source code.
+      type: string
+  volumes:
+    - name: config
+      emptyDir: {}
+    - name: trusted-ca
+      configMap:
+        items:
+          - key: $(params.caTrustConfigMapKey)
+            path: ca-bundle.crt
+        name: $(params.caTrustConfigMapName)
+        optional: true
+    - name: workdir
+      emptyDir: {}
+  workspaces:
+    - name: git-basic-auth
+      description: |
+        A Workspace containing a .gitconfig and .git-credentials file or username and password.
+        These will be copied to the user's home before any cachi2 commands are run. Any
+        other files in this Workspace are ignored. It is strongly recommended
+        to bind a Secret to this Workspace over other volume types.
+      optional: true
+    - name: netrc
+      description: |
+        Workspace containing a .netrc file. Cachi2 will use the credentials in this file when
+        performing http(s) requests.
+      optional: true
+  stepTemplate:
+    env:
+      - name: UTILS_REPO_URL
+        value: $(params.utilsRepoUrl)
+      - name: UTILS_REPO_BRANCH
+        value: $(params.utilsRepoBranch)
+      - name: BUILD_CONFIG_REPO_URL
+        value: $(params.buildConfigRepoUrl)
+      - name: BUILD_CONFIG_REPO_BRANCH
+        value: $(params.buildConfigRepoBranch)
+      - name: RHOAI_QUAY_API_TOKEN
+        value: ""
+      - name: OPENDATAHUB_QUAY_API_TOKEN
+        value: ""
+      - name: BUILD_VERSION_TAG
+        value: $(params.buildVersionTag)
+    volumeMounts:
+      - mountPath: /mnt/config
+        name: config
+      - mountPath: /var/workdir
+        name: workdir
+  steps:
+    - name: use-trusted-artifact
+      image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+      args:
+        - use
+        - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+    - name: prefetch-manifests
+      image: quay.io/rhoai/rhoai-task-toolset:latest
+      volumeMounts:
+        - mountPath: /mnt/trusted-ca
+          name: trusted-ca
+          readOnly: true
+      env:
+        - name: WORKSPACE_GIT_AUTH_BOUND
+          value: $(workspaces.git-basic-auth.bound)
+        - name: WORKSPACE_GIT_AUTH_PATH
+          value: $(workspaces.git-basic-auth.path)
+        - name: WORKSPACE_NETRC_BOUND
+          value: $(workspaces.netrc.bound)
+        - name: WORKSPACE_NETRC_PATH
+          value: $(workspaces.netrc.path)
+        - name: ODH_OPERATOR_COMPONENT_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.labels['appstudio.openshift.io/component']
+      workingDir: /var/workdir
+      script: |
+        # Install dependencies
+        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        arch="$(uname -m | sed 's/x86_64/amd64/')"
+        yq_version="v4.44.3"
+        yq_filename="yq-$yq_version"
+        echo "-> Downloading yq" >&2
+        curl -sSfLo "$yq_filename" "https://github.com/mikefarah/yq/releases/download/$yq_version/yq_${os}_${arch}"
+        chmod +x $yq_filename
+        ln -s $yq_filename yq
+        cp $yq_filename /usr/local/bin/yq
+        
+        mkdir -p playpen
+        git clone ${UTILS_REPO_URL} --branch ${UTILS_REPO_BRANCH} utils
+        ls utils
+        
+        git clone ${BUILD_CONFIG_REPO_URL} --branch ${BUILD_CONFIG_REPO_BRANCH} RBC
+        ls RBC
+        
+        pip install --default-timeout=100 -r utils/utils/operator-processor/requirements.txt
+        
+          echo "ODH_OPERATOR_COMPONENT_NAME = ${ODH_OPERATOR_COMPONENT_NAME}"
+          PATCH_YAML_PATH=RBC/bundle/bundle-patch.yaml
+          OPERANDS_MAP_PATH=source/build/operands-map.yaml
+          MANIFEST_CONFIG_PATH=source/build/manifests-config.yaml
+          PUSH_PIPELINE_PATH=source/.tekton/${ODH_OPERATOR_COMPONENT_NAME}-push.yaml
+        
+          python3 utils/utils/operator-processor/operator-processor.py  -op process-operator-yamls --patch-yaml-path ${PATCH_YAML_PATH} --operands-map-path ${OPERANDS_MAP_PATH} --manifest-config-path ${MANIFEST_CONFIG_PATH} --rhoai-version ${BUILD_VERSION_TAG} --push-pipeline-yaml-path ${PUSH_PIPELINE_PATH} --push-pipeline-operation enable
+          
+          echo "----- OPERANDS_MAP ------"
+          cat $OPERANDS_MAP_PATH
+          echo "----- MANIFEST_CONFIG ------"
+          cat $MANIFEST_CONFIG_PATH
+          echo "current dir = $(pwd)"
+        
+        
+        
+        
+        
+        
+        echo "*************** Prefetching manifests ********************"
+          PREFETCHED_MANIFEST_DIR_PATH="/var/workdir/cachi2/prefetched-manifests"
+          MANIFEST_CONFIG_PATH=/var/workdir/source/build/manifests-config.yaml
+
+          # Create fresh directories
+          mkdir -p "$PREFETCHED_MANIFEST_DIR_PATH"
+          echo "# general cachi2 config" > /var/workdir/cachi2/cachi2.env
+          mkdir -p manifests
+          cd manifests
+          while IFS= read -r value;
+          do
+              value=${value/- /}
+              component=$value
+
+              # Skip empty keys
+              [[ -z "$component" ]] && continue
+               
+              echo "=============================================================="
+              echo "Fetching Manifest for component: $component"
+              echo "=============================================================="
+              if [[ -n $component ]]
+              then	
+                  git_url=$(value="$value" yq '.map[strenv(value)]["git.url"]' ${MANIFEST_CONFIG_PATH})
+                  git_commit=$(value="$value" yq '.map[strenv(value)]["git.commit"]' ${MANIFEST_CONFIG_PATH})
+                  ref_type=$(value="$value" yq '.map[strenv(value)]["ref_type"]' ${MANIFEST_CONFIG_PATH})
+                  BRANCH=$(value="$value" yq '.map[strenv(value)]["branch"]' ${MANIFEST_CONFIG_PATH})
+
+                  # If ref_type is branch, resolve the actual commit SHA
+                  if [[ "$ref_type" == "branch" ]]; then
+                    # Fetch latest commit SHA for the branch from remote
+                    git_commit=$(git ls-remote "$git_url" "refs/heads/$BRANCH" | awk '{print $1}')
+                    echo "Resolved git.commit for branch '$BRANCH' to commit SHA $git_commit"
+
+                    # Update the git.commit field in manifests-config.yaml for the current component.
+                    # Using strenv() to safely reference both the component key ($value) and the new commit SHA ($git_commit).
+                    # This avoids issues with --arg, which is not supported in this yq version, and prevents creating an empty "" key.
+                    value="$value" git_commit="$git_commit" yq -i eval '.map[strenv(value)]["git.commit"] = strenv(git_commit)' ${MANIFEST_CONFIG_PATH}
+
+                  fi
+
+                  src=$(value="$value" yq '.map[strenv(value)]["src"]' ${MANIFEST_CONFIG_PATH})
+                  dest=$(value="$value" yq '.map[strenv(value)]["dest"]' ${MANIFEST_CONFIG_PATH})
+                  
+                  echo "component = $component"
+                  echo "git_url = $git_url"
+                  echo "git_commit = $git_commit"
+                  echo "src = $src"
+                  echo "dest = $dest"
+          
+                  mkdir -p $component
+                  cd $component
+          
+                  # git config --global init.defaultBranch ${BRANCH}
+                  git init
+                  git remote add origin $git_url
+                  git config core.sparseCheckout true
+                  git config core.sparseCheckoutCone false
+                  echo "$src" >> .git/info/sparse-checkout
+                  git fetch --depth=1 origin $git_commit
+                  git checkout $git_commit
+          
+                  cd ../
+                  echo "current dir = $(pwd)"
+                  
+                  dest_dir_path=${PREFETCHED_MANIFEST_DIR_PATH}/$dest
+                  mkdir -p ${dest_dir_path}
+
+                  cp -r $component/$src/* ${dest_dir_path}
+                  echo ""
+              fi
+          done < <(yq e '.map | keys' ${MANIFEST_CONFIG_PATH} )
+          
+          cd ${PREFETCHED_MANIFEST_DIR_PATH}
+        ls -l
+        
+
+    - name: create-trusted-artifact
+      image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+      args:
+        - create
+        - --store
+        - $(params.ociStorage)
+        - $(results.SOURCE_ARTIFACT.path)=/var/workdir/source
+        - $(results.CACHI2_ARTIFACT.path)=/var/workdir/cachi2
+      env:
+        - name: IMAGE_EXPIRES_AFTER
+          value: $(params.ociArtifactExpiresAfter)

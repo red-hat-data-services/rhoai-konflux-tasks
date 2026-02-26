@@ -1,0 +1,130 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: trigger-group-testing
+spec:
+  workspaces:
+    - name: basic-auth
+      optional: true
+  steps:
+  - image: quay.io/konflux-ci/konflux-test:stable
+    name: trigger-group-testing
+    env:
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+      value: $(workspaces.basic-auth.bound)
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+      value: $(workspaces.basic-auth.path)
+    - name: REPO_OWNER
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-org']
+    - name: REPO_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/url-repository']
+    - name: PR_NUMBER
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/pull-request']
+    - name: CURRENT_PIPELINE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/original-prname']
+    script: |
+      #!/bin/bash
+      set -e
+      echo "----- DEBUG INFORMATION -----"
+      echo "REPO_OWNER: $REPO_OWNER"
+      echo "REPO_NAME: $REPO_NAME"
+      echo "PR_NUMBER: $PR_NUMBER"
+
+
+      if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+        echo "configuring gh cli"
+        ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
+        GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+      fi
+      
+      # GitHub API endpoints
+      API_BASE="https://api.github.com"
+      PR_URL="$API_BASE/repos/$REPO_OWNER/$REPO_NAME/pulls/$PR_NUMBER"
+      COMMENTS_URL="$API_BASE/repos/$REPO_OWNER/$REPO_NAME/issues/$PR_NUMBER/comments"
+      
+      echo "Fetching PR information..."
+      # Get the PR to find the head SHA
+      PR_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "$PR_URL")
+      echo "PR_DATA=${PR_DATA}"
+      HEAD_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')
+      
+      if [ -z "$HEAD_SHA" ] || [ "$HEAD_SHA" = "null" ]; then
+          echo "Error: Could not retrieve HEAD SHA for PR #$PR_NUMBER"
+          exit 1
+      fi
+      
+      echo "HEAD SHA: $HEAD_SHA"
+      
+      # Get check runs for the commit
+      echo "Fetching check runs..."
+      CHECK_RUNS_URL="$API_BASE/repos/$REPO_OWNER/$REPO_NAME/commits/$HEAD_SHA/check-runs"
+      CHECK_RUNS_DATA=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "$CHECK_RUNS_URL")
+      
+      # Extract check runs with names starting with "Red Hat Konflux"
+      echo "CHECK_RUNS_DATA=${CHECK_RUNS_DATA}"
+      echo "Analyzing check runs..."
+      KONFLUX_CHECKS=$(echo "$CHECK_RUNS_DATA" | jq -r '.check_runs[] | select(.name | startswith("Red Hat Konflux")) | "\(.name)|\(.status)"')
+      
+      if [ -z "$KONFLUX_CHECKS" ]; then
+          echo "No Red Hat Konflux checks found"
+          exit 0
+      fi
+      
+      echo "Found Red Hat Konflux checks:"
+      echo "$KONFLUX_CHECKS"
+      
+      # Check if all Konflux checks are completed (except odh-group-test)
+      ALL_COMPLETED=true
+      while IFS='|' read -r name status; do
+          # Skip the check with "odh-group-test" in its name
+          if [[ "$name" == *"odh-group-test"* || "$name" == *"${CURRENT_PIPELINE_NAME}" ]]; then
+              echo "Skipping check: $name (contains odh-group-test or it is the current pipeline which is about to finish!)"
+              continue
+          fi
+      
+          if [ "$status" != "completed" ]; then
+              echo "Check not completed: $name (status: $status)"
+              ALL_COMPLETED=false
+          else
+              echo "Check completed: $name"
+          fi
+      done <<< "$KONFLUX_CHECKS"
+      
+      # If all checks are completed, add comment
+      if [ "$ALL_COMPLETED" = true ]; then
+          echo ""
+          echo "✓ Condition met: All checks completed except odh-group-test"
+          echo "Adding comment '/group-test' to PR #$PR_NUMBER..."
+      
+          COMMENT_RESPONSE=$(curl -s -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -H "Content-Type: application/json" \
+              -d '{"body":"/group-test"}' \
+              "$COMMENTS_URL")
+          COMMENT_URL=$(echo "$COMMENT_RESPONSE" | jq -r '.html_url')
+      
+          if [ -n "$COMMENT_URL" ] && [ "$COMMENT_URL" != "null" ]; then
+              echo "✓ Comment added successfully: $COMMENT_URL"
+          else
+              echo "✗ Failed to add comment"
+              echo "$COMMENT_RESPONSE" | jq .
+              exit 1
+          fi
+      else
+          echo ""
+          echo "✗ Condition not met. Not adding comment."
+          echo "Reason: Need all checks completed"
+      fi

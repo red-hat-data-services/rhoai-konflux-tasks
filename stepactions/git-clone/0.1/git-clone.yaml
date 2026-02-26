@@ -1,0 +1,119 @@
+apiVersion: tekton.dev/v1alpha1
+kind: StepAction
+metadata:
+  name: git-clone
+  labels:
+    upstream-usable: "true"
+spec:
+  description: |
+    This StepAction scans is to clone a given repo on a given location with sparse checkout enabled
+  image: quay.io/konflux-qe-incubator/konflux-qe-tools:latest
+  params:
+    - name: repo-path
+      type: string
+    - name: repo-branch
+      type: string
+    - name: sparse-file-path
+      type: string
+      default: ""
+    - name: dest-path
+      type: string
+      default: ""
+    - name: artifacts-dir-path
+      type: string
+      default: ""
+    - name: always-pass
+      type: string
+      default: "false"
+  workingDir: /workspace/odh-ci-artifacts
+  env:
+    - name: REPO_PATH
+      value: "$(params.repo-path)"
+    - name: REPO_BRANCH
+      value: "$(params.repo-branch)"
+    - name: SPARSE_FILE_PATH
+      value: "$(params.sparse-file-path)"
+    - name: DEST_PATH
+      value: "$(params.dest-path)"
+    - name: ARTIFACTS_DIR_PATH
+      value: "$(params.artifacts-dir-path)"
+    - name: ALWAYS_PASS
+      value: "$(params.always-pass)"
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
+      value: $(workspaces.basic-auth.bound)
+    - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
+      value: $(workspaces.basic-auth.path)
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: odh-github-secret
+          key: build-metadata-token
+  script: |
+    #!/bin/bash
+    set -e
+
+    echo "REPO_PATH: $REPO_PATH"
+    echo "REPO_BRANCH: $REPO_BRANCH"
+    echo "SPARSE_FILE_PATH: $SPARSE_FILE_PATH"
+    echo "DEST_PATH: $DEST_PATH"
+    echo "ALWAYS_PASS: $ALWAYS_PASS"
+    echo "ARTIFACTS_DIR_PATH: $ARTIFACTS_DIR_PATH"
+
+    main() {
+    
+          if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
+            echo "configuring gh token"
+            # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+            echo "taking github token from Konflux bot"
+          fi
+          if [ -z "$GITHUB_TOKEN" ]; then
+              echo "Error: GITHUB_TOKEN env is not set."
+              exit 1
+          fi
+    
+          mkdir -p ${DEST_PATH}
+          cd ${DEST_PATH}
+          git config --global init.defaultBranch ${REPO_BRANCH}
+          git config --global user.name "OpenShift-AI-DevOps"
+          git config --global user.email "openshift-ai-devops@redhat.com"
+          git init
+          git config --global --add safe.directory ${DEST_PATH}
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
+          if [[ -n "${SPARSE_FILE_PATH}" ]]; then
+              echo "enabling sparse checkout.."
+              git config core.sparseCheckout true
+              git config core.sparseCheckoutCone false
+              echo "${SPARSE_FILE_PATH}" >> .git/info/sparse-checkout
+              cat .git/info/sparse-checkout
+          fi
+          git fetch --depth=1 origin ${REPO_BRANCH}
+          git checkout ${REPO_BRANCH}
+          ls -l
+          ls -l test-artifacts
+          echo "checking if the CI artifacts exist.."
+          if [[ ! -d "${SPARSE_FILE_PATH}" ]] || [[ -d "${SPARSE_FILE_PATH}" && -z "$(ls -A ${SPARSE_FILE_PATH})" ]]; then
+              echo "SKIP" > /workspace/status
+              echo "exiting since no CI artifacts found"
+              exit 0
+          else
+            echo "checking contents of ${SPARSE_FILE_PATH}"
+            ls -l ${SPARSE_FILE_PATH}
+          fi
+          
+          if [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
+            cd ${ARTIFACTS_DIR_PATH}
+            for f in *.tar.gz; do
+              dir="${f%.tar.gz}"
+              mkdir -p "$dir"
+              tar -xzf "$f" -C "$dir"
+            done
+            rm -rf *.tar.gz
+          fi
+
+    }
+
+    if [ "$ALWAYS_PASS" == "true" ]; then
+      main || true
+    else
+      main
+    fi
