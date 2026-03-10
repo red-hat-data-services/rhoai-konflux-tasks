@@ -9,7 +9,7 @@ metadata:
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
       == "main" && ( "runner-images/base/***".pathChanged() || ".tekton/base-runner-image-push.yaml".pathChanged()
-      || "Containerfile".pathChanged() )
+      || "runner-images/base/Containerfile".pathChanged() )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: runner-images
@@ -24,12 +24,13 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/rhoai-tenant/base-runner-image:{{revision}}
+    value: quay.io/rhoai-devops/base-runner:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
+    - linux/arm64
   - name: dockerfile
-    value: Containerfile
+    value: runner-images/Containerfile
   - name: path-context
     value: runner-images/base
   pipelineSpec:
