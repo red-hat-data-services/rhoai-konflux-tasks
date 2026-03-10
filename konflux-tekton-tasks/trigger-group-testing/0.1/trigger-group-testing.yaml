@@ -30,6 +30,11 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.annotations['pipelinesascode.tekton.dev/original-prname']
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: odh-github-secret
+          key: commenter-token
     script: |
       #!/bin/bash
       set -e
@@ -42,7 +47,12 @@ spec:
       if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
         echo "configuring gh cli"
         ls -la "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}"
-        GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+        # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
+      fi
+      
+      if [ -z "$GITHUB_TOKEN" ]; then
+          echo "Error: GITHUB_TOKEN env is not set."
+          exit 1
       fi
       
       # GitHub API endpoints
