@@ -1,0 +1,5 @@
+FROM registry.access.redhat.com/ubi9/ubi:latest
+ARG TARGETARCH
+RUN curl -sSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH} -o /usr/local/bin/yq
+RUN chmod +x /usr/local/bin/yq
+RUN dnf install -y skopeo podman git jq gettext
