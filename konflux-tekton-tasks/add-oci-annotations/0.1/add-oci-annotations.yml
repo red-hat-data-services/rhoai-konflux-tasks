@@ -1,0 +1,84 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: add-oci-annotations
+spec:
+  description: |-
+    Adds OCI manifest annotations to a previously pushed OCI artifact.
+    This task works by pulling the artifact to a local OCI layout, patching
+    the manifest with the provided annotations and pushing it back to the
+    registry. The digest will change as a result of the manifest modification.
+  params:
+    - name: IMAGE_URL
+      description: Full image reference (e.g., quay.io/org/repo:tag)
+      type: string
+    - name: ANNOTATIONS
+      description: Array of annotations in "key=value" format to add to the OCI manifest
+      type: array
+  results:
+    - name: IMAGE_URL
+      description: Image URL after annotation (same as input)
+    - name: IMAGE_DIGEST
+      description: New digest of the annotated image manifest
+  steps:
+    - name: annotate
+      image: quay.io/konflux-ci/tools@sha256:dc63fa5c598ba26ccfb1685c39ad6a3a0b9d95ae25bdc5113a7940630b813fcd
+      env:
+        - name: IMAGE_URL
+          value: $(params.IMAGE_URL)
+      args:
+        - $(params.ANNOTATIONS[*])
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+
+        ANNOTATIONS_ARGS=("$@")
+        WORK_DIR=$(mktemp -d)
+
+        echo "Pulling OCI artifact: ${IMAGE_URL}"
+        skopeo copy "docker://${IMAGE_URL}" "oci:${WORK_DIR}/oci-layout:chart"
+
+        MANIFEST_DIGEST=$(jq -r '.manifests[0].digest' "${WORK_DIR}/oci-layout/index.json")
+        MANIFEST_PATH="${WORK_DIR}/oci-layout/blobs/${MANIFEST_DIGEST/://}"
+
+        echo "Original manifest digest: ${MANIFEST_DIGEST}"
+
+        ANNOTATIONS_JSON="{}"
+        for ann in "${ANNOTATIONS_ARGS[@]}"; do
+          key="${ann%%=*}"
+          value="${ann#*=}"
+          ANNOTATIONS_JSON=$(echo "$ANNOTATIONS_JSON" | jq --arg k "$key" --arg v "$value" '. + {($k): $v}')
+        done
+
+        echo "Annotations to add:"
+        echo "$ANNOTATIONS_JSON" | jq .
+
+        jq --argjson ann "$ANNOTATIONS_JSON" \
+          '.annotations = ((.annotations // {}) + $ann)' \
+          "$MANIFEST_PATH" > "${MANIFEST_PATH}.new"
+        mv "${MANIFEST_PATH}.new" "$MANIFEST_PATH"
+
+        NEW_DIGEST="sha256:$(sha256sum "$MANIFEST_PATH" | awk '{print $1}')"
+        NEW_SIZE=$(wc -c < "$MANIFEST_PATH" | tr -d ' ')
+
+        NEW_BLOB_PATH="${WORK_DIR}/oci-layout/blobs/${NEW_DIGEST/://}"
+        if [ "$MANIFEST_PATH" != "$NEW_BLOB_PATH" ]; then
+          cp "$MANIFEST_PATH" "$NEW_BLOB_PATH"
+        fi
+
+        jq --arg digest "$NEW_DIGEST" --argjson size "$NEW_SIZE" \
+          '.manifests[0].digest = $digest | .manifests[0].size = $size' \
+          "${WORK_DIR}/oci-layout/index.json" > "${WORK_DIR}/oci-layout/index.json.new"
+        mv "${WORK_DIR}/oci-layout/index.json.new" "${WORK_DIR}/oci-layout/index.json"
+
+        echo "New manifest digest: ${NEW_DIGEST}"
+        echo "Pushing annotated artifact back to: ${IMAGE_URL}"
+        skopeo copy "oci:${WORK_DIR}/oci-layout:chart" "docker://${IMAGE_URL}"
+
+        echo -n "${IMAGE_URL}" > "$(results.IMAGE_URL.path)"
+        echo -n "${NEW_DIGEST}" > "$(results.IMAGE_DIGEST.path)"
+
+        rm -rf "${WORK_DIR}"
+        echo "Successfully added OCI annotations"
+      securityContext:
+        runAsUser: 0
