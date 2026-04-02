@@ -246,6 +246,12 @@ spec:
         slack_message=$(echo -e "${slack_message}\nCC - <!subteam^S09SZP9J34M|rhoai-releng>")
         set -H  # re-enable history expansion
       fi
+      
+      if [[ "$image_namespace" == "rhoai-private" ]]; then
+        echo "Embargoed build target detected. Not sending slack message"
+        echo -n "true" > "$(results.skip-slack-message.path)"
+        exit 0
+      fi
 
       echo -en "${slack_message}" > "$(results.slack-message-failure-text.path)"
       echo "Slack Message: ${slack_message}"
