@@ -60,54 +60,63 @@ spec:
     echo "ARTIFACTS_DIR_PATH: $ARTIFACTS_DIR_PATH"
 
     main() {
-    
+
           if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
             echo "configuring gh token"
-            # GITHUB_TOKEN=$(cat "${WORKSPACE_BASIC_AUTH_DIRECTORY_PATH}/git-provider-token")
             echo "taking github token from Konflux bot"
           fi
           if [ -z "$GITHUB_TOKEN" ]; then
               echo "Error: GITHUB_TOKEN env is not set."
               exit 1
           fi
-    
-          mkdir -p ${DEST_PATH}
-          cd ${DEST_PATH}
-          git config --global init.defaultBranch ${REPO_BRANCH}
+
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
           git config --global user.name "OpenShift-AI-DevOps"
           git config --global user.email "openshift-ai-devops@redhat.com"
-          git init
-          git config --global --add safe.directory ${DEST_PATH}
-          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO_PATH}.git"
+
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
-              echo "enabling sparse checkout.."
-              git config core.sparseCheckout true
-              git config core.sparseCheckoutCone false
-              echo "${SPARSE_FILE_PATH}" >> .git/info/sparse-checkout
-              cat .git/info/sparse-checkout
+              # Use partial clone to avoid downloading the entire pack file.
+              # Only blobs for the sparse path are fetched on demand, reducing
+              # memory usage from ~3 GB to ~35 MB for large artifact repos.
+              echo "Using partial clone with sparse checkout for: ${SPARSE_FILE_PATH}"
+              git clone --filter=blob:none --sparse --depth=1 \
+                --branch "${REPO_BRANCH}" "${REPO_URL}" "${DEST_PATH}"
+              cd "${DEST_PATH}"
+              git config --global --add safe.directory "${DEST_PATH}"
+              git sparse-checkout set "${SPARSE_FILE_PATH}"
+          else
+              mkdir -p ${DEST_PATH}
+              cd ${DEST_PATH}
+              git config --global init.defaultBranch ${REPO_BRANCH}
+              git config --global --add safe.directory ${DEST_PATH}
+              git init
+              git remote add origin "${REPO_URL}"
+              git fetch --depth=1 origin ${REPO_BRANCH}
+              git checkout ${REPO_BRANCH}
           fi
-          git fetch --depth=1 origin ${REPO_BRANCH}
-          git checkout ${REPO_BRANCH}
+
           ls -l
-          ls -l test-artifacts
           echo "checking if the CI artifacts exist.."
-          if [[ ! -d "${SPARSE_FILE_PATH}" ]] || [[ -d "${SPARSE_FILE_PATH}" && -z "$(ls -A ${SPARSE_FILE_PATH})" ]]; then
+          if [[ -n "${SPARSE_FILE_PATH}" ]] && { [[ ! -d "${SPARSE_FILE_PATH}" ]] || [[ -z "$(ls -A ${SPARSE_FILE_PATH})" ]]; }; then
               echo "SKIP" > /workspace/status
               echo "exiting since no CI artifacts found"
               exit 0
           else
-            echo "checking contents of ${SPARSE_FILE_PATH}"
-            ls -l ${SPARSE_FILE_PATH}
+            if [[ -n "${SPARSE_FILE_PATH}" ]]; then
+              echo "checking contents of ${SPARSE_FILE_PATH}"
+              ls -l ${SPARSE_FILE_PATH}
+            fi
           fi
-          
-          if [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
+
+          if [[ -n "${ARTIFACTS_DIR_PATH}" ]] && [[ -e "${ARTIFACTS_DIR_PATH}" ]]; then
             cd ${ARTIFACTS_DIR_PATH}
             for f in *.tar.gz; do
+              [[ -e "$f" ]] || continue
               dir="${f%.tar.gz}"
               mkdir -p "$dir"
               tar -xzf "$f" -C "$dir"
             done
-            rm -rf *.tar.gz
+            rm -f *.tar.gz
           fi
 
     }
