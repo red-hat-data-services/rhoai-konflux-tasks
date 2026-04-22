@@ -99,7 +99,7 @@ spec:
               git sparse-checkout init
               git sparse-checkout set "${SPARSE_FILE_PATH}"
               git fetch --filter=blob:none --depth=1 origin "${REPO_BRANCH}"
-              git checkout FETCH_HEAD
+              git checkout "${REPO_BRANCH}"
           else
               git fetch --depth=1 origin "${REPO_BRANCH}"
               git checkout "${REPO_BRANCH}"
