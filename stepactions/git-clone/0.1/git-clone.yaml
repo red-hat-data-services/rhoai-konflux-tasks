@@ -74,25 +74,25 @@ spec:
           git config --global user.name "OpenShift-AI-DevOps"
           git config --global user.email "openshift-ai-devops@redhat.com"
 
+          mkdir -p "${DEST_PATH}"
+          cd "${DEST_PATH}"
+          git config --global init.defaultBranch "${REPO_BRANCH}"
+          git config --global --add safe.directory "${DEST_PATH}"
+          git init
+          git remote add origin "${REPO_URL}"
+
           if [[ -n "${SPARSE_FILE_PATH}" ]]; then
-              # Use partial clone to avoid downloading the entire pack file.
+              # Use partial fetch to avoid downloading the entire pack file.
               # Only blobs for the sparse path are fetched on demand, reducing
-              # memory usage from ~3 GB to ~35 MB for large artifact repos.
-              echo "Using partial clone with sparse checkout for: ${SPARSE_FILE_PATH}"
-              git clone --filter=blob:none --sparse --depth=1 \
-                --branch "${REPO_BRANCH}" "${REPO_URL}" "${DEST_PATH}"
-              cd "${DEST_PATH}"
-              git config --global --add safe.directory "${DEST_PATH}"
+              # memory usage significantly for large repos.
+              echo "Using partial fetch with sparse checkout for: ${SPARSE_FILE_PATH}"
+              git sparse-checkout init
               git sparse-checkout set "${SPARSE_FILE_PATH}"
+              git fetch --filter=blob:none --depth=1 origin "${REPO_BRANCH}"
+              git checkout FETCH_HEAD
           else
-              mkdir -p ${DEST_PATH}
-              cd ${DEST_PATH}
-              git config --global init.defaultBranch ${REPO_BRANCH}
-              git config --global --add safe.directory ${DEST_PATH}
-              git init
-              git remote add origin "${REPO_URL}"
-              git fetch --depth=1 origin ${REPO_BRANCH}
-              git checkout ${REPO_BRANCH}
+              git fetch --depth=1 origin "${REPO_BRANCH}"
+              git checkout "${REPO_BRANCH}"
           fi
 
           ls -l
