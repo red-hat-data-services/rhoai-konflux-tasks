@@ -11,6 +11,10 @@ spec:
   params:
     - name: COMPONENTS
       description: List of components in the group
+    - name: fallback-tag
+      type: string
+      default: odh-stable
+      description: Quay tag when PR image is missing
   results:
   - description: Snapshot json string
     name: SNAPSHOT
@@ -21,6 +25,8 @@ spec:
       env:
         - name: COMPONENTS
           value: $(params.COMPONENTS)
+        - name: FALLBACK_TAG
+          value: $(params.fallback-tag)
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
           value: $(workspaces.basic-auth.bound)
         - name: WORKSPACE_BASIC_AUTH_DIRECTORY_PATH
@@ -44,7 +50,6 @@ spec:
         while IFS= read -r row; do
             # Tag to search for
             TAG="odh-pr-${PR_NUMBER}"
-            FALLBACK_TAG="odh-stable"
         
             # Decode the base64 encoded row
             component=$(echo "$row" | base64 -d | jq -r '.key')
