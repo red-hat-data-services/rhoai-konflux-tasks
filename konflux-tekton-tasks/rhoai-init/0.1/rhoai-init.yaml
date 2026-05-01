@@ -91,7 +91,7 @@ spec:
 
       # Check if this is a pull request pipeline
       is_pull_request=false
-      if [[ "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request"' ]]; then
+      if [[ "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request"' || "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request_labeled"' || "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" ]]; then
         is_pull_request=true
         echo "Pull request pipeline detected"
       fi
@@ -139,7 +139,7 @@ spec:
       }
 
       # No need to set CPE ID for pull request builds
-      if [[ ! "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request"' ]]; then
+      if [[ "$is_pull_request" == "false" ]]; then
 
         # All RHOAI versions 2.20 and above use RHEL 9
         # Determine rhel_version based on semantic comparison with 2.20
@@ -232,7 +232,7 @@ spec:
       slack_message=${slack_message/__BUILD__TIME__/$build_time}
 
       # Don't send a slack message for pull request pipelines
-      if [[ "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" ]]; then
+      if [[ "$is_pull_request" == "true" ]]; then
         echo "pull request pipeline detected, skipping slack message"
         echo -n "true" > "$(results.skip-slack-message.path)"
       fi
@@ -246,7 +246,7 @@ spec:
         slack_message=$(echo -e "${slack_message}\nCC - <!subteam^S09SZP9J34M|rhoai-releng>")
         set -H  # re-enable history expansion
       fi
-      
+
       if [[ "$image_namespace" == "rhoai-private" ]]; then
         echo "Embargoed build target detected. Not sending slack message"
         echo -n "true" > "$(results.skip-slack-message.path)"
