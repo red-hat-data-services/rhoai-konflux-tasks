@@ -29,6 +29,8 @@ spec:
     name: mandatory-tag
   - description: Build URL
     name: build-url
+  - description: Unique tag combining PR number and repo name (max 128 chars)
+    name: unique-tag
   steps:
   - image: registry.access.redhat.com/ubi9/ubi:latest
     name: rhoai-init
@@ -80,6 +82,10 @@ spec:
           fieldPath: metadata.labels['pipelinesascode.tekton.dev/pull-request']
     - name: PIPELINE_TYPE
       value: $(params.pipeline-type)
+    - name: REPO_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['pipelinesascode.tekton.dev/url-repository']
     script: |
       echo "----- DEBUG INFORMATION -----"
       echo "Build URL: $BUILD_URL"
@@ -185,3 +191,8 @@ spec:
       echo -n "${PR_TAG}" > "$(results.mandatory-tag.path)"
 
       echo -n "${BUILD_URL}" > "$(results.build-url.path)"
+
+      unique_tag="odh-pr-${PR_NUMBER}-${REPO_NAME}"
+      unique_tag="${unique_tag:0:128}"
+      echo "UNIQUE_TAG=${unique_tag}"
+      echo -n "${unique_tag}" > "$(results.unique-tag.path)"
