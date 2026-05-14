@@ -1,14 +1,14 @@
 apiVersion: tekton.dev/v1
 kind: Task
 metadata:
-  name: trigger-group-testing
+  name: trigger-early-gate-build
 spec:
   workspaces:
     - name: basic-auth
       optional: true
   steps:
   - image: quay.io/konflux-ci/konflux-test:stable
-    name: trigger-group-testing
+    name: trigger-early-gate-build
     env:
     - name: WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND
       value: $(workspaces.basic-auth.bound)
