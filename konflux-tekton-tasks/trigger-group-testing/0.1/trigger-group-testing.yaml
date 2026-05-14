@@ -95,12 +95,12 @@ spec:
       echo "Found Red Hat Konflux checks:"
       echo "$KONFLUX_CHECKS"
       
-      # Check if all Konflux checks are completed (except odh-group-test)
+      # Check if all Konflux checks are completed (except group-test)
       ALL_COMPLETED=true
       while IFS='|' read -r name status; do
-          # Skip the check with "odh-group-test" in its name
-          if [[ "$name" == *"odh-group-test"* || "$name" == *"${CURRENT_PIPELINE_NAME}" ]]; then
-              echo "Skipping check: $name (contains odh-group-test or it is the current pipeline which is about to finish!)"
+          # Skip the check with "group-test" in its name
+          if [[ "$name" == *"group-test"* || "$name" == *"${CURRENT_PIPELINE_NAME}" ]]; then
+              echo "Skipping check: $name (contains group-test or it is the current pipeline which is about to finish!)"
               continue
           fi
       
@@ -115,7 +115,7 @@ spec:
       # If all checks are completed, add comment
       if [ "$ALL_COMPLETED" = true ]; then
           echo ""
-          echo "✓ Condition met: All checks completed except odh-group-test"
+          echo "✓ Condition met: All checks completed except group-test"
           echo "Adding comment '/group-test' to PR #$PR_NUMBER..."
       
           COMMENT_RESPONSE=$(curl -s -X POST \
