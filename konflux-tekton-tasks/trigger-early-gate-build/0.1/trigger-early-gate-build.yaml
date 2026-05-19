@@ -85,7 +85,7 @@ spec:
       # Extract check runs with names starting with "Red Hat Konflux"
       echo "CHECK_RUNS_DATA=${CHECK_RUNS_DATA}"
       echo "Analyzing check runs..."
-      KONFLUX_CHECKS=$(echo "$CHECK_RUNS_DATA" | jq -r '.check_runs[] | select(.name | startswith("Red Hat Konflux") | endswith("pull-request")) | "\(.name)|\(.status)"')
+      KONFLUX_CHECKS=$(echo "$CHECK_RUNS_DATA" | jq -r '.check_runs[] | select(.name | (startswith("Red Hat Konflux") and endswith("pull-request"))) | "\(.name)|\(.status)"')
       
       if [ -z "$KONFLUX_CHECKS" ]; then
           echo "No Red Hat Konflux checks found"
