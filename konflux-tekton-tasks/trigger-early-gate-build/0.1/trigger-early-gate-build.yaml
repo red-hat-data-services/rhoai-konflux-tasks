@@ -26,6 +26,10 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.annotations['pipelinesascode.tekton.dev/pull-request']
+    - name: TARGET_BRANCH
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
     - name: CURRENT_PIPELINE_NAME
       valueFrom:
         fieldRef:
@@ -42,6 +46,7 @@ spec:
       echo "REPO_OWNER: $REPO_OWNER"
       echo "REPO_NAME: $REPO_NAME"
       echo "PR_NUMBER: $PR_NUMBER"
+      echo "TARGET_BRANCH: $TARGET_BRANCH"
 
 
       if [ "${WORKSPACE_BASIC_AUTH_DIRECTORY_BOUND}" = "true" ]; then
@@ -54,7 +59,49 @@ spec:
           echo "Error: GITHUB_TOKEN env is not set."
           exit 1
       fi
-      
+
+      # ---------------------------------------------------------------
+      # Fetch early-gate config and check eligibility
+      # ---------------------------------------------------------------
+      echo "Fetching early-gate config from OKC..."
+      CONFIG_URL="https://api.github.com/repos/opendatahub-io/odh-konflux-central/contents/config/early-gate-config.yaml?ref=main"
+      CONFIG_RAW=$(curl -sSf -H "Accept: application/vnd.github.v3+json" "$CONFIG_URL" | jq -r '.content' | base64 -d)
+
+      if [ -z "$CONFIG_RAW" ]; then
+          echo "Error: Could not fetch early-gate-config.yaml"
+          exit 1
+      fi
+
+      curl -sSfLo /usr/local/bin/yq "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+      chmod +x /usr/local/bin/yq
+
+      EARLY_GATE_ENABLED=$(echo "$CONFIG_RAW" | yq ".config.repositories.\"${REPO_NAME}\".early-gate-enabled // false")
+      if [ "$EARLY_GATE_ENABLED" != "true" ]; then
+          echo "Early gate not enabled for ${REPO_NAME}. Skipping."
+          exit 0
+      fi
+
+      REQUIRED_ON_DEFAULT=$(echo "$CONFIG_RAW" | yq ".config.repositories.\"${REPO_NAME}\".early-gate-required-on-default-branches // false")
+      ADDITIONAL_BRANCHES=$(echo "$CONFIG_RAW" | yq ".config.repositories.\"${REPO_NAME}\".additional-branches // []")
+      DEFAULT_BRANCHES=$(echo "$CONFIG_RAW" | yq ".config.default-branches-allowlist // []")
+
+      IN_ADDITIONAL=$(echo "$ADDITIONAL_BRANCHES" | yq ". | any_c(. == \"${TARGET_BRANCH}\")")
+      IN_DEFAULT=$(echo "$DEFAULT_BRANCHES" | yq ". | any_c(. == \"${TARGET_BRANCH}\")")
+
+      if [ "$REQUIRED_ON_DEFAULT" = "true" ]; then
+          if [ "$IN_ADDITIONAL" != "true" ]; then
+              echo "Branch '${TARGET_BRANCH}' not in additional-branches for ${REPO_NAME}. Skipping."
+              exit 0
+          fi
+      else
+          if [ "$IN_DEFAULT" != "true" ] && [ "$IN_ADDITIONAL" != "true" ]; then
+              echo "Branch '${TARGET_BRANCH}' not in default or additional branches for ${REPO_NAME}. Skipping."
+              exit 0
+          fi
+      fi
+
+      echo "Early gate eligible: repo=${REPO_NAME}, branch=${TARGET_BRANCH}"
+
       # GitHub API endpoints
       API_BASE="https://api.github.com"
       PR_URL="$API_BASE/repos/$REPO_OWNER/$REPO_NAME/pulls/$PR_NUMBER"
