@@ -1,0 +1,186 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: prefetch-manifests-oci-ta
+  annotations:
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/tags: image-build, konflux
+  labels:
+    app.kubernetes.io/version: "0.1"
+spec:
+  description: |-
+    Prefetch operand manifests based on build/manifests-config.yaml.
+    Lightweight alternative to prefetch-operand-manifests-oci-ta that
+    skips operator-processor and only performs git-based manifest collection.
+  params:
+    - name: SOURCE_ARTIFACT
+      description: The Trusted Artifact URI pointing to the artifact with
+        the application source code.
+      type: string
+    - name: ociStorage
+      description: The OCI repository where the Trusted Artifacts are stored.
+      type: string
+    - name: ociArtifactExpiresAfter
+      description: Expiration date for the trusted artifacts created in the
+        OCI repository. An empty string means the artifacts do not expire.
+      type: string
+      default: "1d"
+    - name: caTrustConfigMapName
+      description: The name of the ConfigMap to read CA bundle data from.
+      type: string
+      default: trusted-ca
+    - name: caTrustConfigMapKey
+      description: The name of the key in the ConfigMap that contains the
+        CA bundle data.
+      type: string
+      default: ca-bundle.crt
+    - name: manifestConfigPath
+      description: Path to manifests-config.yaml relative to source root.
+      type: string
+      default: "build/manifests-config.yaml"
+  results:
+    - name: CACHI2_ARTIFACT
+      description: The Trusted Artifact URI pointing to the artifact with
+        the prefetched manifests.
+      type: string
+    - name: SOURCE_ARTIFACT
+      description: The Trusted Artifact URI pointing to the artifact with
+        the application source code.
+      type: string
+  volumes:
+    - name: workdir
+      emptyDir: {}
+    - name: trusted-ca
+      configMap:
+        items:
+          - key: $(params.caTrustConfigMapKey)
+            path: ca-bundle.crt
+        name: $(params.caTrustConfigMapName)
+        optional: true
+  workspaces:
+    - name: git-basic-auth
+      description: |
+        A Workspace containing a .gitconfig and .git-credentials file or username and password.
+        These will be copied to the user's home before any git commands are run.
+      optional: true
+  stepTemplate:
+    volumeMounts:
+      - mountPath: /var/workdir
+        name: workdir
+  steps:
+    - name: use-trusted-artifact
+      image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+      args:
+        - use
+        - $(params.SOURCE_ARTIFACT)=/var/workdir/source
+
+    - name: prefetch-manifests
+      image: quay.io/rhoai/rhoai-task-toolset:latest
+      volumeMounts:
+        - mountPath: /mnt/trusted-ca
+          name: trusted-ca
+          readOnly: true
+      env:
+        - name: WORKSPACE_GIT_AUTH_BOUND
+          value: $(workspaces.git-basic-auth.bound)
+        - name: WORKSPACE_GIT_AUTH_PATH
+          value: $(workspaces.git-basic-auth.path)
+        - name: MANIFEST_CONFIG_PATH
+          value: /var/workdir/source/$(params.manifestConfigPath)
+      workingDir: /var/workdir
+      script: |
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        # Install yq
+        os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        arch="$(uname -m | sed 's/x86_64/amd64/')"
+        yq_version="v4.44.3"
+        yq_filename="yq-$yq_version"
+        echo "-> Downloading yq" >&2
+        curl -sSfLo "$yq_filename" "https://github.com/mikefarah/yq/releases/download/$yq_version/yq_${os}_${arch}"
+        chmod +x $yq_filename
+        ln -s $yq_filename yq
+        cp $yq_filename /usr/local/bin/yq
+
+        if [ "${WORKSPACE_GIT_AUTH_BOUND}" = "true" ]; then
+          if [ -f "${WORKSPACE_GIT_AUTH_PATH}/.git-credentials" ] && [ -f "${WORKSPACE_GIT_AUTH_PATH}/.gitconfig" ]; then
+            cp "${WORKSPACE_GIT_AUTH_PATH}/.git-credentials" "${HOME}/.git-credentials"
+            cp "${WORKSPACE_GIT_AUTH_PATH}/.gitconfig" "${HOME}/.gitconfig"
+          fi
+        fi
+
+        PREFETCHED_DIR="/var/workdir/cachi2/prefetched-manifests"
+        mkdir -p "${PREFETCHED_DIR}"
+        echo "# cachi2 env" > /var/workdir/cachi2/cachi2.env
+
+        if [ ! -f "${MANIFEST_CONFIG_PATH}" ]; then
+          echo "ERROR: ${MANIFEST_CONFIG_PATH} not found"
+          exit 1
+        fi
+
+        echo "Reading manifest config from ${MANIFEST_CONFIG_PATH}"
+        mkdir -p /var/workdir/manifests-work
+        cd /var/workdir/manifests-work
+
+        while IFS= read -r value; do
+          value=${value/- /}
+          component=$value
+          [[ -z "$component" ]] && continue
+
+          echo "=============================================================="
+          echo "Fetching manifests for component: ${component}"
+          echo "=============================================================="
+
+          git_url=$(value="$value" yq '.map[strenv(value)]["git.url"]' "${MANIFEST_CONFIG_PATH}")
+          git_commit=$(value="$value" yq '.map[strenv(value)]["git.commit"]' "${MANIFEST_CONFIG_PATH}")
+          ref_type=$(value="$value" yq '.map[strenv(value)]["ref_type"]' "${MANIFEST_CONFIG_PATH}")
+          branch=$(value="$value" yq '.map[strenv(value)]["branch"]' "${MANIFEST_CONFIG_PATH}")
+          src=$(value="$value" yq '.map[strenv(value)]["src"]' "${MANIFEST_CONFIG_PATH}")
+          dest=$(value="$value" yq '.map[strenv(value)]["dest"]' "${MANIFEST_CONFIG_PATH}")
+
+          if [[ "${ref_type}" == "branch" ]]; then
+            git_commit=$(git ls-remote "${git_url}" "refs/heads/${branch}" | awk '{print $1}')
+            echo "Resolved branch '${branch}' to commit ${git_commit}"
+          fi
+
+          echo "  git_url=${git_url}"
+          echo "  git_commit=${git_commit}"
+          echo "  src=${src}"
+          echo "  dest=${dest}"
+
+          mkdir -p "${component}"
+          cd "${component}"
+          git init -q
+          git remote add origin "${git_url}"
+          git config core.sparseCheckout true
+          git config core.sparseCheckoutCone false
+          echo "${src}" >> .git/info/sparse-checkout
+          git fetch --depth=1 origin "${git_commit}"
+          git checkout "${git_commit}"
+          cd ../
+
+          dest_dir="${PREFETCHED_DIR}/${dest}"
+          mkdir -p "${dest_dir}"
+          cp -r "${component}/${src}"/* "${dest_dir}/"
+          echo "  Copied $(find "${dest_dir}" -type f | wc -l) files to ${dest}"
+          echo ""
+
+        done < <(yq e '.map | keys' "${MANIFEST_CONFIG_PATH}")
+
+        echo "=============================================================="
+        echo "Prefetch complete. Contents:"
+        ls -l "${PREFETCHED_DIR}"
+        echo "=============================================================="
+
+    - name: create-trusted-artifact
+      image: quay.io/redhat-appstudio/build-trusted-artifacts:latest@sha256:81c4864dae6bb11595f657be887e205262e70086a05ed16ada827fd6391926ac
+      args:
+        - create
+        - --store
+        - $(params.ociStorage)
+        - $(results.SOURCE_ARTIFACT.path)=/var/workdir/source
+        - $(results.CACHI2_ARTIFACT.path)=/var/workdir/cachi2
+      env:
+        - name: IMAGE_EXPIRES_AFTER
+          value: $(params.ociArtifactExpiresAfter)
