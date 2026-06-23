@@ -115,7 +115,7 @@ spec:
       }
 
       # No need to set CPE ID for pull request builds and if RHOAI version is not provided
-      if [[ ! "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" && -n "$RHOAI_VERSION" ]]; then
+      if [[ "${PIPELINE_TYPE}" != "pull-request" && -n "$RHOAI_VERSION" ]]; then
 
         # All RHOAI versions 2.20 and above use RHEL 9
         # Determine rhel_version based on semantic comparison with 2.20
@@ -156,10 +156,10 @@ spec:
 
 
       # Do not include the CC line for pull request pipelines
-      if ! [[ "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" ]]; then
+      if [[ "${PIPELINE_TYPE}" != "pull-request" ]]; then
         slack_message=$(echo -e "${slack_message}\nCC - ${component_slack_handle}")
       else
-        echo "pull request pipeline detected. Not notifying slack "
+        echo "pull request pipeline detected, skipping Build IC CC"
       fi
 
       # Tag @rhoai-releng for stage FBCF build failures
