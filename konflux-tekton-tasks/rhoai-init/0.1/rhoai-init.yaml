@@ -249,6 +249,8 @@ spec:
 
       if [[ "$image_namespace" == "rhoai-private" ]]; then
         echo "Embargoed build target detected. Not sending slack message"
+        # Prod delivery repo is "rhoai" for both embargoed and non-embargoed builds
+        echo -n "rhoai" > "$(results.image-namespace.path)"
         echo -n "true" > "$(results.skip-slack-message.path)"
         exit 0
       fi
