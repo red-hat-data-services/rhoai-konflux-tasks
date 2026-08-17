@@ -204,7 +204,7 @@ spec:
         timestamp: ${TIMESTAMP}
         METADATA_EOF
 
-        AUTH_HEADER="Authorization: Basic $(echo -n "${JIRA_USER}:${JIRA_TOKEN}" | base64)"
+        AUTH_HEADER="Authorization: Basic $(echo -n "${JIRA_USER}:${JIRA_TOKEN}" | base64 -w 0)"
 
         # ── Duplicate detection ──
         COMPONENT_LABEL="component:${COMPONENT_NAME}"
@@ -212,10 +212,11 @@ spec:
 
         echo "DEBUG: Jira URL = ${JIRA_URL}"
         echo "DEBUG: Jira User = ${JIRA_USER}"
-        echo "DEBUG: Full curl verbose to redhat.atlassian.net..."
-        curl -sv --max-time 10 -o /dev/null https://redhat.atlassian.net/rest/api/3/serverInfo 2>&1 || true
-        echo "DEBUG: Trying with -k (skip cert verify)..."
-        curl -sk --max-time 10 -w "HTTP_CODE:%{http_code}\n" -o /dev/null https://redhat.atlassian.net/rest/api/3/serverInfo 2>&1 || true
+        echo "DEBUG: Testing authenticated Jira call..."
+        curl -s --max-time 10 -w "\nHTTP_CODE:%{http_code}" \
+          -H "${AUTH_HEADER}" \
+          "${JIRA_URL}/rest/api/3/myself" 2>&1 || true
+        echo ""
         echo "DEBUG: Testing Jira connectivity..."
         ENCODED_JQL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''${JQL}'''))" 2>/dev/null || echo "$JQL")
         SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "${JIRA_URL}/rest/api/3/search/jql" \
