@@ -210,14 +210,25 @@ spec:
         COMPONENT_LABEL="component:${COMPONENT_NAME}"
         JQL="project = ${JIRA_PROJECT_KEY} AND labels = ops-buddy AND labels = build-failure AND labels = \"${COMPONENT_LABEL}\" AND status != Done AND created >= -7d"
 
-        SEARCH_RESPONSE=$(curl -sf -X POST "${JIRA_URL}/rest/api/2/search" \
+        echo "DEBUG: Jira URL = ${JIRA_URL}"
+        echo "DEBUG: Jira User = ${JIRA_USER}"
+        SEARCH_RESPONSE=$(curl -s -X POST "${JIRA_URL}/rest/api/2/search" \
           -H "${AUTH_HEADER}" \
           -H "Content-Type: application/json" \
           -d "$(jq -n --arg jql "$JQL" '{jql: $jql, maxResults: 1, fields: ["key","status","summary"]}')" \
-        ) || {
-          echo "WARNING: Jira search failed — will create new issue"
+        )
+        SEARCH_RC=$?
+        if [ "$SEARCH_RC" -ne 0 ]; then
+          echo "WARNING: Jira search curl failed (rc=${SEARCH_RC})"
           SEARCH_RESPONSE='{"total":0}'
-        }
+        else
+          echo "DEBUG: Jira search response = ${SEARCH_RESPONSE}"
+          SEARCH_OK=$(echo "$SEARCH_RESPONSE" | jq -r '.total // empty' 2>/dev/null)
+          if [ -z "$SEARCH_OK" ]; then
+            echo "WARNING: Jira search returned unexpected response"
+            SEARCH_RESPONSE='{"total":0}'
+          fi
+        fi
 
         EXISTING_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r '.total // 0')
 
@@ -278,16 +289,20 @@ spec:
             }
             | if $epic_key != "" then .fields["customfield_12311140"] = $epic_key else . end')
 
-          CREATE_RESPONSE=$(curl -sf -X POST "${JIRA_URL}/rest/api/2/issue" \
+          echo "DEBUG: Create payload = ${CREATE_PAYLOAD}"
+          CREATE_RESPONSE=$(curl -s -X POST "${JIRA_URL}/rest/api/2/issue" \
             -H "${AUTH_HEADER}" \
             -H "Content-Type: application/json" \
             -d "$CREATE_PAYLOAD" \
-          ) || {
+          )
+          CREATE_RC=$?
+          echo "DEBUG: Create response = ${CREATE_RESPONSE}"
+          if [ "$CREATE_RC" -ne 0 ] || echo "$CREATE_RESPONSE" | jq -e '.key' > /dev/null 2>&1; [ $? -ne 0 ]; then
             echo "ERROR: Failed to create Jira issue"
             printf "" > "$(results.jira-issue-key.path)"
             printf "" > "$(results.jira-action.path)"
             exit 0
-          }
+          fi
 
           NEW_KEY=$(echo "$CREATE_RESPONSE" | jq -r '.key')
           echo "Created Jira issue: ${NEW_KEY}"
