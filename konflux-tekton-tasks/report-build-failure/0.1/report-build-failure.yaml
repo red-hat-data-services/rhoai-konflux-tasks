@@ -212,6 +212,12 @@ spec:
 
         echo "DEBUG: Jira URL = ${JIRA_URL}"
         echo "DEBUG: Jira User = ${JIRA_USER}"
+        echo "DEBUG: DNS lookup for redhat.atlassian.net..."
+        nslookup redhat.atlassian.net 2>&1 || true
+        echo "DEBUG: curl verbose test..."
+        curl -sv --max-time 5 -o /dev/null https://redhat.atlassian.net 2>&1 | head -20 || true
+        echo "DEBUG: Checking proxy env vars..."
+        echo "HTTP_PROXY=${HTTP_PROXY:-unset} HTTPS_PROXY=${HTTPS_PROXY:-unset} NO_PROXY=${NO_PROXY:-unset} http_proxy=${http_proxy:-unset} https_proxy=${https_proxy:-unset}"
         echo "DEBUG: Testing Jira connectivity..."
         ENCODED_JQL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''${JQL}'''))" 2>/dev/null || echo "$JQL")
         SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "${JIRA_URL}/rest/api/3/search/jql" \
