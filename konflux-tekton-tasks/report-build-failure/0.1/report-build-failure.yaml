@@ -213,10 +213,12 @@ spec:
         echo "DEBUG: Jira URL = ${JIRA_URL}"
         echo "DEBUG: Jira User = ${JIRA_USER}"
         echo "DEBUG: Testing Jira connectivity..."
-        SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "${JIRA_URL}/rest/api/2/search" \
+        ENCODED_JQL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''${JQL}'''))" 2>/dev/null || echo "$JQL")
+        SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "${JIRA_URL}/rest/api/3/search/jql" \
           -H "${AUTH_HEADER}" \
-          -H "Content-Type: application/json" \
-          -d "$(jq -n --arg jql "$JQL" '{jql: $jql, maxResults: 1, fields: ["key","status","summary"]}')" \
+          --data-urlencode "jql=${JQL}" \
+          --data-urlencode "maxResults=1" \
+          --data-urlencode "fields=key,status,summary" \
         ) || true
         HTTP_CODE=$(echo "$SEARCH_RESPONSE" | tail -1 | sed 's/HTTP_CODE://')
         SEARCH_RESPONSE=$(echo "$SEARCH_RESPONSE" | sed '$d')
@@ -234,21 +236,32 @@ spec:
           EXISTING_KEY=$(echo "$SEARCH_RESPONSE" | jq -r '.issues[0].key')
           echo "Found existing issue ${EXISTING_KEY} — adding comment"
 
-          COMMENT_BODY="New build failure for *${COMPONENT_NAME}* at ${TIMESTAMP}
-        PipelineRun: ${PIPELINE_RUN_NAME}
-        Revision: [${SHORT_REV}|${COMMIT_URL}]
-        Build Log: [View|${BUILD_URL}]
-        Slack Thread: [Thread|${SLACK_THREAD_URL:-N/A}]"
+          COMMENT_PAYLOAD=$(jq -n \
+            --arg comp "$COMPONENT_NAME" \
+            --arg ts "$TIMESTAMP" \
+            --arg pr "$PIPELINE_RUN_NAME" \
+            --arg rev "$SHORT_REV" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg build_url "$BUILD_URL" \
+            --arg slack_url "${SLACK_THREAD_URL:-N/A}" \
+            '{body: {version: 1, type: "doc", content: [{type: "paragraph", content: [
+              {type: "text", text: ("New build failure for " + $comp + " at " + $ts + "\nPipelineRun: " + $pr + "\nRevision: ")},
+              {type: "text", text: $rev, marks: [{type: "link", attrs: {href: $commit_url}}]},
+              {type: "text", text: "\nBuild Log: "},
+              {type: "text", text: "View", marks: [{type: "link", attrs: {href: $build_url}}]},
+              {type: "text", text: "\nSlack Thread: "},
+              {type: "text", text: "Thread", marks: [{type: "link", attrs: {href: $slack_url}}]}
+            ]}]}}')
 
-          curl -sf -X POST "${JIRA_URL}/rest/api/2/issue/${EXISTING_KEY}/comment" \
+          curl -sf -X POST "${JIRA_URL}/rest/api/3/issue/${EXISTING_KEY}/comment" \
             -H "${AUTH_HEADER}" \
             -H "Content-Type: application/json" \
-            -d "$(jq -n --arg body "$COMMENT_BODY" '{body: $body}')" \
+            -d "$COMMENT_PAYLOAD" \
           && echo "Comment added to ${EXISTING_KEY}" \
           || echo "WARNING: Failed to add comment to ${EXISTING_KEY}"
 
           # Attach updated metadata YAML
-          curl -sf -X POST "${JIRA_URL}/rest/api/2/issue/${EXISTING_KEY}/attachments" \
+          curl -sf -X POST "${JIRA_URL}/rest/api/3/issue/${EXISTING_KEY}/attachments" \
             -H "${AUTH_HEADER}" \
             -H "X-Atlassian-Token: no-check" \
             -F "file=@/tmp/build-failure-metadata.yaml" \
@@ -262,24 +275,34 @@ spec:
 
           ISSUE_SUMMARY="[Build Failure] ${COMPONENT_NAME} - ${REPO_NAME} ($(date -u +%Y-%m-%d))"
 
-          ISSUE_DESCRIPTION="Build failure detected by Build Buddy.
-        Component: ${COMPONENT_NAME}
-        Repository: [${REPO_NAME}|${GIT_URL}]
-        Slack Thread: [View Thread|${SLACK_THREAD_URL:-N/A}]
-        See attached build-failure-metadata.yaml for full details."
-
-          # Build the create payload, conditionally include epic link
+          # Build the create payload with ADF description (Jira API v3)
           CREATE_PAYLOAD=$(jq -n \
             --arg project "$JIRA_PROJECT_KEY" \
             --arg summary "$ISSUE_SUMMARY" \
-            --arg description "$ISSUE_DESCRIPTION" \
+            --arg component_name "$COMPONENT_NAME" \
+            --arg repo_name "$REPO_NAME" \
+            --arg git_url "$GIT_URL" \
+            --arg slack_url "${SLACK_THREAD_URL:-N/A}" \
             --arg component_label "$COMPONENT_LABEL" \
             --arg epic_key "${JIRA_EPIC_KEY:-}" \
             '{
               fields: {
                 project: {key: $project},
                 summary: $summary,
-                description: $description,
+                description: {
+                  version: 1,
+                  type: "doc",
+                  content: [
+                    {type: "paragraph", content: [{type: "text", text: "Build failure detected by Build Buddy."}]},
+                    {type: "paragraph", content: [
+                      {type: "text", text: ("Component: " + $component_name + "\nRepository: ")},
+                      {type: "text", text: $repo_name, marks: [{type: "link", attrs: {href: $git_url}}]},
+                      {type: "text", text: "\nSlack Thread: "},
+                      {type: "text", text: "View Thread", marks: [{type: "link", attrs: {href: $slack_url}}]},
+                      {type: "text", text: "\nSee attached build-failure-metadata.yaml for full details."}
+                    ]}
+                  ]
+                },
                 issuetype: {name: "Bug"},
                 labels: ["ops-buddy", "build-failure", "unprocessed", "no-autofix", $component_label]
               }
@@ -287,7 +310,7 @@ spec:
             | if $epic_key != "" then .fields["customfield_12311140"] = $epic_key else . end')
 
           echo "DEBUG: Create payload = ${CREATE_PAYLOAD}"
-          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "${JIRA_URL}/rest/api/2/issue" \
+          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "${JIRA_URL}/rest/api/3/issue" \
             -H "${AUTH_HEADER}" \
             -H "Content-Type: application/json" \
             -d "$CREATE_PAYLOAD" \
@@ -307,7 +330,7 @@ spec:
           echo "Created Jira issue: ${NEW_KEY}"
 
           # Attach metadata YAML
-          curl -sf -X POST "${JIRA_URL}/rest/api/2/issue/${NEW_KEY}/attachments" \
+          curl -sf -X POST "${JIRA_URL}/rest/api/3/issue/${NEW_KEY}/attachments" \
             -H "${AUTH_HEADER}" \
             -H "X-Atlassian-Token: no-check" \
             -F "file=@/tmp/build-failure-metadata.yaml" \
