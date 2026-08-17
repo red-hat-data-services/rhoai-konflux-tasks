@@ -212,22 +212,19 @@ spec:
 
         echo "DEBUG: Jira URL = ${JIRA_URL}"
         echo "DEBUG: Jira User = ${JIRA_USER}"
-        SEARCH_RESPONSE=$(curl -s -X POST "${JIRA_URL}/rest/api/2/search" \
+        echo "DEBUG: Testing Jira connectivity..."
+        SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "${JIRA_URL}/rest/api/2/search" \
           -H "${AUTH_HEADER}" \
           -H "Content-Type: application/json" \
           -d "$(jq -n --arg jql "$JQL" '{jql: $jql, maxResults: 1, fields: ["key","status","summary"]}')" \
-        )
-        SEARCH_RC=$?
-        if [ "$SEARCH_RC" -ne 0 ]; then
-          echo "WARNING: Jira search curl failed (rc=${SEARCH_RC})"
+        ) || true
+        HTTP_CODE=$(echo "$SEARCH_RESPONSE" | tail -1 | sed 's/HTTP_CODE://')
+        SEARCH_RESPONSE=$(echo "$SEARCH_RESPONSE" | sed '$d')
+        echo "DEBUG: Jira search HTTP code = ${HTTP_CODE}"
+        echo "DEBUG: Jira search response = ${SEARCH_RESPONSE}"
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "WARNING: Jira search failed (HTTP ${HTTP_CODE}) — will create new issue"
           SEARCH_RESPONSE='{"total":0}'
-        else
-          echo "DEBUG: Jira search response = ${SEARCH_RESPONSE}"
-          SEARCH_OK=$(echo "$SEARCH_RESPONSE" | jq -r '.total // empty' 2>/dev/null)
-          if [ -z "$SEARCH_OK" ]; then
-            echo "WARNING: Jira search returned unexpected response"
-            SEARCH_RESPONSE='{"total":0}'
-          fi
         fi
 
         EXISTING_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r '.total // 0')
@@ -290,15 +287,17 @@ spec:
             | if $epic_key != "" then .fields["customfield_12311140"] = $epic_key else . end')
 
           echo "DEBUG: Create payload = ${CREATE_PAYLOAD}"
-          CREATE_RESPONSE=$(curl -s -X POST "${JIRA_URL}/rest/api/2/issue" \
+          CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "${JIRA_URL}/rest/api/2/issue" \
             -H "${AUTH_HEADER}" \
             -H "Content-Type: application/json" \
             -d "$CREATE_PAYLOAD" \
-          )
-          CREATE_RC=$?
+          ) || true
+          CREATE_HTTP=$(echo "$CREATE_RESPONSE" | tail -1 | sed 's/HTTP_CODE://')
+          CREATE_RESPONSE=$(echo "$CREATE_RESPONSE" | sed '$d')
+          echo "DEBUG: Create HTTP code = ${CREATE_HTTP}"
           echo "DEBUG: Create response = ${CREATE_RESPONSE}"
-          if [ "$CREATE_RC" -ne 0 ] || echo "$CREATE_RESPONSE" | jq -e '.key' > /dev/null 2>&1; [ $? -ne 0 ]; then
-            echo "ERROR: Failed to create Jira issue"
+          if [ "$CREATE_HTTP" != "201" ]; then
+            echo "ERROR: Failed to create Jira issue (HTTP ${CREATE_HTTP})"
             printf "" > "$(results.jira-issue-key.path)"
             printf "" > "$(results.jira-action.path)"
             exit 0
