@@ -210,15 +210,6 @@ spec:
         COMPONENT_LABEL="component:${COMPONENT_NAME}"
         JQL="project = ${JIRA_PROJECT_KEY} AND labels = ops-buddy AND labels = build-failure AND labels = \"${COMPONENT_LABEL}\" AND status != Done AND created >= -7d"
 
-        echo "DEBUG: Jira URL = ${JIRA_URL}"
-        echo "DEBUG: Jira User = ${JIRA_USER}"
-        echo "DEBUG: Testing authenticated Jira call..."
-        curl -s --max-time 10 -w "\nHTTP_CODE:%{http_code}" \
-          -H "${AUTH_HEADER}" \
-          "${JIRA_URL}/rest/api/3/myself" 2>&1 || true
-        echo ""
-        echo "DEBUG: Testing Jira connectivity..."
-        ENCODED_JQL=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''${JQL}'''))" 2>/dev/null || echo "$JQL")
         SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "${JIRA_URL}/rest/api/3/search/jql" \
           -H "${AUTH_HEADER}" \
           --data-urlencode "jql=${JQL}" \
@@ -227,8 +218,6 @@ spec:
         ) || true
         HTTP_CODE=$(echo "$SEARCH_RESPONSE" | tail -1 | sed 's/HTTP_CODE://')
         SEARCH_RESPONSE=$(echo "$SEARCH_RESPONSE" | sed '$d')
-        echo "DEBUG: Jira search HTTP code = ${HTTP_CODE}"
-        echo "DEBUG: Jira search response = ${SEARCH_RESPONSE}"
         if [ "$HTTP_CODE" != "200" ]; then
           echo "WARNING: Jira search failed (HTTP ${HTTP_CODE}) — will create new issue"
           SEARCH_RESPONSE='{"total":0}'
@@ -314,7 +303,6 @@ spec:
             }
             | if $epic_key != "" then .fields["customfield_12311140"] = $epic_key else . end')
 
-          echo "DEBUG: Create payload = ${CREATE_PAYLOAD}"
           CREATE_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST "${JIRA_URL}/rest/api/3/issue" \
             -H "${AUTH_HEADER}" \
             -H "Content-Type: application/json" \
@@ -322,10 +310,8 @@ spec:
           ) || true
           CREATE_HTTP=$(echo "$CREATE_RESPONSE" | tail -1 | sed 's/HTTP_CODE://')
           CREATE_RESPONSE=$(echo "$CREATE_RESPONSE" | sed '$d')
-          echo "DEBUG: Create HTTP code = ${CREATE_HTTP}"
-          echo "DEBUG: Create response = ${CREATE_RESPONSE}"
           if [ "$CREATE_HTTP" != "201" ]; then
-            echo "ERROR: Failed to create Jira issue (HTTP ${CREATE_HTTP})"
+            echo "ERROR: Failed to create Jira issue (HTTP ${CREATE_HTTP}): ${CREATE_RESPONSE}"
             printf "" > "$(results.jira-issue-key.path)"
             printf "" > "$(results.jira-action.path)"
             exit 0
