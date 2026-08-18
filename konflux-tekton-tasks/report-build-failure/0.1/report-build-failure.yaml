@@ -251,6 +251,7 @@ spec:
             -H "${AUTH_HEADER}" \
             -H "Content-Type: application/json" \
             -d "$COMMENT_PAYLOAD" \
+          > /dev/null 2>&1 \
           && echo "Comment added to ${EXISTING_KEY}" \
           || echo "WARNING: Failed to add comment to ${EXISTING_KEY}"
 
