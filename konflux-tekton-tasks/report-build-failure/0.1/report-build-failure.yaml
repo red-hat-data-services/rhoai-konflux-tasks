@@ -121,6 +121,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.labels['appstudio.openshift.io/component']
+        - name: COMMIT_AUTHOR
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sender']
       script: |
         #!/bin/bash
         set -eo pipefail
@@ -192,6 +196,7 @@ spec:
         repository: ${GIT_URL}
         revision: ${REVISION}
         revision_short: ${SHORT_REV}
+        commit_author: ${COMMIT_AUTHOR:-unknown}
         pipelinerun: ${PIPELINE_RUN_NAME}
         pipeline_template: ${PIPELINE_TEMPLATE}
         build_log_url: ${BUILD_URL}
@@ -228,7 +233,14 @@ spec:
         if [ "$EXISTING_COUNT" -gt 0 ]; then
           # ── Update existing issue ──
           EXISTING_KEY=$(echo "$SEARCH_RESPONSE" | jq -r '.issues[0].key')
-          echo "Found existing issue ${EXISTING_KEY} — adding comment"
+          echo "Found existing issue ${EXISTING_KEY} — adding comment (${EXISTING_COUNT} existing failure(s) this week)"
+
+          # Get comment count to determine failure number
+          COMMENT_COUNT_RESP=$(curl -s -G "${JIRA_URL}/rest/api/3/issue/${EXISTING_KEY}/comment" \
+            -H "${AUTH_HEADER}" \
+            --data-urlencode "maxResults=0" \
+          ) || true
+          FAILURE_NUM=$(( $(echo "$COMMENT_COUNT_RESP" | jq -r '.total // 0') + 2 ))
 
           COMMENT_PAYLOAD=$(jq -n \
             --arg comp "$COMPONENT_NAME" \
@@ -237,9 +249,15 @@ spec:
             --arg rev "$SHORT_REV" \
             --arg commit_url "$COMMIT_URL" \
             --arg build_url "$BUILD_URL" \
+            --arg commit_author "${COMMIT_AUTHOR:-unknown}" \
             --arg slack_url "${SLACK_THREAD_URL:-N/A}" \
+            --arg failure_num "Failure #${FAILURE_NUM}" \
             '{body: {version: 1, type: "doc", content: [{type: "paragraph", content: [
-              {type: "text", text: ("New build failure for " + $comp + " at " + $ts + "\nPipelineRun: " + $pr + "\nRevision: ")},
+              {type: "text", text: ($failure_num + " for " + $comp + " at " + $ts), marks: [{type: "strong"}]},
+              {type: "text", text: ("\nCommit by: " + $commit_author)},
+              {type: "text", text: "\nPipelineRun: " },
+              {type: "text", text: $pr},
+              {type: "text", text: "\nRevision: "},
               {type: "text", text: $rev, marks: [{type: "link", attrs: {href: $commit_url}}]},
               {type: "text", text: "\nBuild Log: "},
               {type: "text", text: "View", marks: [{type: "link", attrs: {href: $build_url}}]},
@@ -254,6 +272,17 @@ spec:
           > /dev/null 2>&1 \
           && echo "Comment added to ${EXISTING_KEY}" \
           || echo "WARNING: Failed to add comment to ${EXISTING_KEY}"
+
+          # Escalate priority to High if 3+ failures
+          if [ "$FAILURE_NUM" -ge 3 ]; then
+            curl -sf -X PUT "${JIRA_URL}/rest/api/3/issue/${EXISTING_KEY}" \
+              -H "${AUTH_HEADER}" \
+              -H "Content-Type: application/json" \
+              -d '{"fields":{"priority":{"name":"Critical"}}}' \
+            > /dev/null 2>&1 \
+            && echo "Priority escalated to Critical (${FAILURE_NUM} failures)" \
+            || echo "WARNING: Failed to escalate priority"
+          fi
 
           # Attach updated metadata YAML
           curl -sf -X POST "${JIRA_URL}/rest/api/3/issue/${EXISTING_KEY}/attachments" \
@@ -273,7 +302,7 @@ spec:
               -d "$(jq -n \
                 --arg channel "$CHANNEL_ID" \
                 --arg thread_ts "$THREAD_TS" \
-                --arg text ":jira: Build Buddy: updated existing issue <${JIRA_URL}/browse/${EXISTING_KEY}|${EXISTING_KEY}>" \
+                --arg text ":jira: Build Buddy: updated existing issue <${JIRA_URL}/browse/${EXISTING_KEY}|${EXISTING_KEY}> (failure #${FAILURE_NUM})" \
                 '{channel: $channel, thread_ts: $thread_ts, text: $text}')" \
             > /dev/null 2>&1 || echo "WARNING: Failed to post Jira link to Slack thread"
           fi
@@ -290,6 +319,11 @@ spec:
             --arg component_name "$COMPONENT_NAME" \
             --arg repo_name "$REPO_NAME" \
             --arg git_url "$GIT_URL" \
+            --arg short_rev "$SHORT_REV" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg build_url "$BUILD_URL" \
+            --arg commit_author "${COMMIT_AUTHOR:-unknown}" \
+            --arg pipeline_template "$PIPELINE_TEMPLATE" \
             --arg slack_url "${SLACK_THREAD_URL:-N/A}" \
             --arg component_label "$COMPONENT_LABEL" \
             --arg epic_key "${JIRA_EPIC_KEY:-}" \
@@ -301,13 +335,22 @@ spec:
                   version: 1,
                   type: "doc",
                   content: [
-                    {type: "paragraph", content: [{type: "text", text: "Build failure detected by Build Buddy."}]},
+                    {type: "paragraph", content: [{type: "text", text: "Build failure detected by Build Buddy.", marks: [{type: "strong"}]}]},
                     {type: "paragraph", content: [
-                      {type: "text", text: ("Component: " + $component_name + "\nRepository: ")},
+                      {type: "text", text: "Component: ", marks: [{type: "strong"}]},
+                      {type: "text", text: $component_name},
+                      {type: "text", text: "\nRepository: ", marks: [{type: "strong"}]},
                       {type: "text", text: $repo_name, marks: [{type: "link", attrs: {href: $git_url}}]},
-                      {type: "text", text: "\nSlack Thread: "},
-                      {type: "text", text: "View Thread", marks: [{type: "link", attrs: {href: $slack_url}}]},
-                      {type: "text", text: "\nSee attached build-failure-metadata.yaml for full details."}
+                      {type: "text", text: "\nPipeline: ", marks: [{type: "strong"}]},
+                      {type: "text", text: $pipeline_template},
+                      {type: "text", text: "\nCommit by: ", marks: [{type: "strong"}]},
+                      {type: "text", text: $commit_author},
+                      {type: "text", text: "\nRevision: ", marks: [{type: "strong"}]},
+                      {type: "text", text: $short_rev, marks: [{type: "link", attrs: {href: $commit_url}}]},
+                      {type: "text", text: "\nBuild Log: ", marks: [{type: "strong"}]},
+                      {type: "text", text: "View Log", marks: [{type: "link", attrs: {href: $build_url}}]},
+                      {type: "text", text: "\nSlack Thread: ", marks: [{type: "strong"}]},
+                      {type: "text", text: "View Thread", marks: [{type: "link", attrs: {href: $slack_url}}]}
                     ]}
                   ]
                 },
@@ -352,7 +395,7 @@ spec:
               -d "$(jq -n \
                 --arg channel "$CHANNEL_ID" \
                 --arg thread_ts "$THREAD_TS" \
-                --arg text ":jira: Build Buddy tracking: <${JIRA_URL}/browse/${NEW_KEY}|${NEW_KEY}>" \
+                --arg text ":jira: Build Buddy: created new issue <${JIRA_URL}/browse/${NEW_KEY}|${NEW_KEY}>" \
                 '{channel: $channel, thread_ts: $thread_ts, text: $text}')" \
             > /dev/null 2>&1 || echo "WARNING: Failed to post Jira link to Slack thread"
           fi
