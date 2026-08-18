@@ -210,9 +210,6 @@ spec:
         COMPONENT_LABEL="component:${COMPONENT_NAME}"
         JQL="project = ${JIRA_PROJECT_KEY} AND labels = ops-buddy AND labels = build-failure AND labels = \"${COMPONENT_LABEL}\" AND status != Done AND created >= -7d"
 
-        echo "DEBUG: JQL query: ${JQL}"
-        echo "DEBUG: Search URL: ${JIRA_URL}/rest/api/3/search/jql"
-
         SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "${JIRA_URL}/rest/api/3/search/jql" \
           -H "${AUTH_HEADER}" \
           --data-urlencode "jql=${JQL}" \
@@ -221,15 +218,12 @@ spec:
         ) || true
         HTTP_CODE=$(echo "$SEARCH_RESPONSE" | tail -1 | sed 's/HTTP_CODE://')
         SEARCH_RESPONSE=$(echo "$SEARCH_RESPONSE" | sed '$d')
-        echo "DEBUG: Search HTTP code: ${HTTP_CODE}"
-        echo "DEBUG: Search response: ${SEARCH_RESPONSE}"
         if [ "$HTTP_CODE" != "200" ]; then
           echo "WARNING: Jira search failed (HTTP ${HTTP_CODE}) — will create new issue"
-          SEARCH_RESPONSE='{"total":0}'
+          SEARCH_RESPONSE='{"issues":[]}'
         fi
 
-        EXISTING_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r '.total // 0')
-        echo "DEBUG: Existing count: ${EXISTING_COUNT}"
+        EXISTING_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r '.issues | length')
 
         if [ "$EXISTING_COUNT" -gt 0 ]; then
           # ── Update existing issue ──
