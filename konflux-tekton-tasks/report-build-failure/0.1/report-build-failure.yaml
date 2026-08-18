@@ -264,6 +264,19 @@ spec:
 
           printf "%s" "$EXISTING_KEY" > "$(results.jira-issue-key.path)"
           printf "updated" > "$(results.jira-action.path)"
+
+          # Post Jira link back to Slack thread (updated)
+          if [ -n "${THREAD_TS}" ] && [ -z "${SLACK_FAILED}" ]; then
+            curl -sf -X POST https://slack.com/api/chat.postMessage \
+              -H "Authorization: Bearer ${SLACK_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "$(jq -n \
+                --arg channel "$CHANNEL_ID" \
+                --arg thread_ts "$THREAD_TS" \
+                --arg text ":jira: Build Buddy: updated existing issue <${JIRA_URL}/browse/${EXISTING_KEY}|${EXISTING_KEY}>" \
+                '{channel: $channel, thread_ts: $thread_ts, text: $text}')" \
+            > /dev/null 2>&1 || echo "WARNING: Failed to post Jira link to Slack thread"
+          fi
         else
           # ── Create new issue ──
           echo "No existing issue — creating new Jira issue"
