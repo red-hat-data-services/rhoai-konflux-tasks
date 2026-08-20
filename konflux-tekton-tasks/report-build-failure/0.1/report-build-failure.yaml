@@ -197,6 +197,8 @@ spec:
         revision: ${REVISION}
         revision_short: ${SHORT_REV}
         commit_author: ${COMMIT_AUTHOR:-unknown}
+        failed_task: ${FAILED_TASK:-unknown}
+        failed_message: ${FAILED_MESSAGE:-N/A}
         pipelinerun: ${PIPELINE_RUN_NAME}
         pipeline_template: ${PIPELINE_TEMPLATE}
         build_log_url: ${BUILD_URL}
@@ -211,9 +213,56 @@ spec:
 
         AUTH_HEADER="Authorization: Basic $(echo -n "${JIRA_USER}:${JIRA_TOKEN}" | base64 -w 0)"
 
+        # ── Extract failed task info from K8s API ──
+        FAILED_TASK=""
+        FAILED_MESSAGE=""
+        K8S_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || true)
+        K8S_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        K8S_API="https://kubernetes.default.svc"
+
+        if [ -n "${K8S_TOKEN}" ]; then
+          TASKRUNS_JSON=$(curl -s --cacert "$K8S_CA" \
+            -H "Authorization: Bearer $K8S_TOKEN" \
+            "${K8S_API}/apis/tekton.dev/v1/namespaces/${PIPELINE_RUN_NAMESPACE}/taskruns?labelSelector=tekton.dev/pipelineRun=${PIPELINE_RUN_NAME}" \
+          ) || true
+
+          if echo "$TASKRUNS_JSON" | jq -e '.items' > /dev/null 2>&1; then
+            FAILED_TASK=$(echo "$TASKRUNS_JSON" | jq -r '
+              [.items[] |
+               select(.status.conditions[]? | select(.type=="Succeeded" and .status=="False"))] |
+               first |
+               .metadata.labels["tekton.dev/pipelineTask"] // empty' 2>/dev/null || true)
+
+            FAILED_MESSAGE=$(echo "$TASKRUNS_JSON" | jq -r '
+              [.items[] |
+               select(.status.conditions[]? | select(.type=="Succeeded" and .status=="False"))] |
+               first |
+               .status.conditions[] | select(.type=="Succeeded") | .message // empty' 2>/dev/null || true)
+
+            # Truncate long error messages
+            if [ ${#FAILED_MESSAGE} -gt 300 ]; then
+              FAILED_MESSAGE="${FAILED_MESSAGE:0:300}..."
+            fi
+          fi
+
+          if [ -n "${FAILED_TASK}" ]; then
+            echo "Failed task: ${FAILED_TASK}"
+          else
+            echo "Could not determine failed task"
+          fi
+        fi
+
+        FAILED_TASK_LABEL=""
+        if [ -n "${FAILED_TASK}" ]; then
+          FAILED_TASK_LABEL="failed-task:${FAILED_TASK}"
+        fi
+
         # ── Duplicate detection ──
         COMPONENT_LABEL="component:${COMPONENT_NAME}"
         JQL="project = ${JIRA_PROJECT_KEY} AND labels = ops-buddy AND labels = build-failure AND labels = \"${COMPONENT_LABEL}\" AND status != Done AND created >= -7d"
+        if [ -n "${FAILED_TASK_LABEL}" ]; then
+          JQL="${JQL} AND labels = \"${FAILED_TASK_LABEL}\""
+        fi
 
         SEARCH_RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -G "${JIRA_URL}/rest/api/3/search/jql" \
           -H "${AUTH_HEADER}" \
@@ -250,9 +299,11 @@ spec:
             --arg commit_url "$COMMIT_URL" \
             --arg build_url "$BUILD_URL" \
             --arg commit_author "${COMMIT_AUTHOR:-unknown}" \
+            --arg failed_task "${FAILED_TASK:-}" \
+            --arg failed_message "${FAILED_MESSAGE:-}" \
             --arg slack_url "${SLACK_THREAD_URL:-N/A}" \
             --arg failure_num "Failure #${FAILURE_NUM}" \
-            '{body: {version: 1, type: "doc", content: [{type: "paragraph", content: [
+            '{body: {version: 1, type: "doc", content: [{type: "paragraph", content: ([
               {type: "text", text: ($failure_num + " for " + $comp + " at " + $ts), marks: [{type: "strong"}]},
               {type: "text", text: ("\nCommit by: " + $commit_author)},
               {type: "text", text: "\nPipelineRun: " },
@@ -263,7 +314,16 @@ spec:
               {type: "text", text: "View", marks: [{type: "link", attrs: {href: $build_url}}]},
               {type: "text", text: "\nSlack Thread: "},
               {type: "text", text: "Thread", marks: [{type: "link", attrs: {href: $slack_url}}]}
-            ]}]}}')
+            ]
+            + if $failed_task != "" then [
+              {type: "text", text: "\nFailed Task: "},
+              {type: "text", text: $failed_task, marks: [{type: "strong"}]}
+            ] else [] end
+            + if $failed_message != "" then [
+              {type: "text", text: "\nError: "},
+              {type: "text", text: $failed_message, marks: [{type: "code"}]}
+            ] else [] end
+            )}]}}')
 
           curl -sf -X POST "${JIRA_URL}/rest/api/3/issue/${EXISTING_KEY}/comment" \
             -H "${AUTH_HEADER}" \
@@ -310,9 +370,33 @@ spec:
           # ── Create new issue ──
           echo "No existing issue — creating new Jira issue"
 
-          ISSUE_SUMMARY="[Build Failure] ${COMPONENT_NAME} - ${REPO_NAME} ($(date -u +%Y-%m-%d))"
+          if [ -n "${FAILED_TASK}" ]; then
+            ISSUE_SUMMARY="[Build Failure] ${COMPONENT_NAME} - ${FAILED_TASK} failed ($(date -u +%Y-%m-%d))"
+          else
+            ISSUE_SUMMARY="[Build Failure] ${COMPONENT_NAME} - ${REPO_NAME} ($(date -u +%Y-%m-%d))"
+          fi
 
           # Build the create payload with ADF description (Jira API v3)
+          DESCRIPTION_CONTENT='[
+            {"type": "paragraph", "content": [{"type": "text", "text": "Build failure detected by Build Buddy.", "marks": [{"type": "strong"}]}]},
+            {"type": "paragraph", "content": [
+              {"type": "text", "text": "Component: ", "marks": [{"type": "strong"}]},
+              {"type": "text", "text": "PLACEHOLDER_COMPONENT"},
+              {"type": "text", "text": "\nRepository: ", "marks": [{"type": "strong"}]},
+              {"type": "text", "text": "PLACEHOLDER_REPO", "marks": [{"type": "link", "attrs": {"href": "PLACEHOLDER_GIT_URL"}}]},
+              {"type": "text", "text": "\nPipeline: ", "marks": [{"type": "strong"}]},
+              {"type": "text", "text": "PLACEHOLDER_PIPELINE"},
+              {"type": "text", "text": "\nCommit by: ", "marks": [{"type": "strong"}]},
+              {"type": "text", "text": "PLACEHOLDER_AUTHOR"},
+              {"type": "text", "text": "\nRevision: ", "marks": [{"type": "strong"}]},
+              {"type": "text", "text": "PLACEHOLDER_REV", "marks": [{"type": "link", "attrs": {"href": "PLACEHOLDER_COMMIT_URL"}}]},
+              {"type": "text", "text": "\nBuild Log: ", "marks": [{"type": "strong"}]},
+              {"type": "text", "text": "View Log", "marks": [{"type": "link", "attrs": {"href": "PLACEHOLDER_BUILD_URL"}}]},
+              {"type": "text", "text": "\nSlack Thread: ", "marks": [{"type": "strong"}]},
+              {"type": "text", "text": "View Thread", "marks": [{"type": "link", "attrs": {"href": "PLACEHOLDER_SLACK_URL"}}]}
+            ]}
+          ]'
+
           CREATE_PAYLOAD=$(jq -n \
             --arg project "$JIRA_PROJECT_KEY" \
             --arg summary "$ISSUE_SUMMARY" \
@@ -326,6 +410,9 @@ spec:
             --arg pipeline_template "$PIPELINE_TEMPLATE" \
             --arg slack_url "${SLACK_THREAD_URL:-N/A}" \
             --arg component_label "$COMPONENT_LABEL" \
+            --arg failed_task "${FAILED_TASK:-}" \
+            --arg failed_message "${FAILED_MESSAGE:-}" \
+            --arg failed_task_label "${FAILED_TASK_LABEL:-}" \
             --arg epic_key "${JIRA_EPIC_KEY:-}" \
             '{
               fields: {
@@ -353,9 +440,19 @@ spec:
                       {type: "text", text: "View Thread", marks: [{type: "link", attrs: {href: $slack_url}}]}
                     ]}
                   ]
+                  + if $failed_task != "" then
+                    [{type: "paragraph", content: [
+                      {type: "text", text: "Failed Task: ", marks: [{type: "strong"}]},
+                      {type: "text", text: $failed_task}
+                    ] + if $failed_message != "" then [
+                      {type: "text", text: "\nError: "},
+                      {type: "text", text: $failed_message, marks: [{type: "code"}]}
+                    ] else [] end}]
+                  else [] end
                 },
                 issuetype: {name: "Bug"},
-                labels: ["ops-buddy", "build-failure", "unprocessed", "no-autofix", $component_label]
+                labels: (["ops-buddy", "build-failure", "unprocessed", "no-autofix", $component_label]
+                  + if $failed_task_label != "" then [$failed_task_label] else [] end)
               }
             }
             | if $epic_key != "" then .fields["customfield_12311140"] = $epic_key else . end')
