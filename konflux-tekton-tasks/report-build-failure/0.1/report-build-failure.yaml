@@ -258,18 +258,19 @@ spec:
         fi
 
         # Build Slack failure summary for thread replies
+        NL=$'\n'
         SLACK_FAILURE_SUMMARY=""
         if [ -n "${FAILED_TASK}" ]; then
-          SLACK_FAILURE_SUMMARY="\n:x: *Failed task:* \`${FAILED_TASK}\`"
+          SLACK_FAILURE_SUMMARY="${NL}:x: *Failed task:* \`${FAILED_TASK}\`"
         fi
         if [ -n "${FAILED_MESSAGE}" ]; then
           SHORT_ERROR="${FAILED_MESSAGE}"
           if [ ${#SHORT_ERROR} -gt 150 ]; then
             SHORT_ERROR="${SHORT_ERROR:0:150}..."
           fi
-          SLACK_FAILURE_SUMMARY="${SLACK_FAILURE_SUMMARY}\n:memo: \`${SHORT_ERROR}\`"
+          SLACK_FAILURE_SUMMARY="${SLACK_FAILURE_SUMMARY}${NL}:memo: \`${SHORT_ERROR}\`"
         fi
-        SLACK_FAILURE_SUMMARY="${SLACK_FAILURE_SUMMARY}\n:bust_in_silhouette: *Commit by:* ${COMMIT_AUTHOR:-unknown} | *Rev:* \`${SHORT_REV}\`"
+        SLACK_FAILURE_SUMMARY="${SLACK_FAILURE_SUMMARY}${NL}:bust_in_silhouette: *Commit by:* ${COMMIT_AUTHOR:-unknown} | *Rev:* \`${SHORT_REV}\`"
 
         # ── Duplicate detection ──
         COMPONENT_LABEL="component:${COMPONENT_NAME}"
