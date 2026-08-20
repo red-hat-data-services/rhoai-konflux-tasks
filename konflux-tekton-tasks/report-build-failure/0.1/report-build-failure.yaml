@@ -257,6 +257,20 @@ spec:
           FAILED_TASK_LABEL="failed-task:${FAILED_TASK}"
         fi
 
+        # Build Slack failure summary for thread replies
+        SLACK_FAILURE_SUMMARY=""
+        if [ -n "${FAILED_TASK}" ]; then
+          SLACK_FAILURE_SUMMARY="\n:x: *Failed task:* \`${FAILED_TASK}\`"
+        fi
+        if [ -n "${FAILED_MESSAGE}" ]; then
+          SHORT_ERROR="${FAILED_MESSAGE}"
+          if [ ${#SHORT_ERROR} -gt 150 ]; then
+            SHORT_ERROR="${SHORT_ERROR:0:150}..."
+          fi
+          SLACK_FAILURE_SUMMARY="${SLACK_FAILURE_SUMMARY}\n:memo: \`${SHORT_ERROR}\`"
+        fi
+        SLACK_FAILURE_SUMMARY="${SLACK_FAILURE_SUMMARY}\n:bust_in_silhouette: *Commit by:* ${COMMIT_AUTHOR:-unknown} | *Rev:* \`${SHORT_REV}\`"
+
         # ── Duplicate detection ──
         COMPONENT_LABEL="component:${COMPONENT_NAME}"
         JQL="project = ${JIRA_PROJECT_KEY} AND labels = ops-buddy AND labels = build-failure AND labels = \"${COMPONENT_LABEL}\" AND status != Done AND created >= -7d"
@@ -365,7 +379,7 @@ spec:
               -d "$(jq -n \
                 --arg channel "$CHANNEL_ID" \
                 --arg thread_ts "$THREAD_TS" \
-                --arg text ":jira: Build Buddy: updated existing issue <${JIRA_URL}/browse/${EXISTING_KEY}|${EXISTING_KEY}> (failure #${FAILURE_NUM})" \
+                --arg text ":jira: Build Buddy: updated existing issue <${JIRA_URL}/browse/${EXISTING_KEY}|${EXISTING_KEY}> (failure #${FAILURE_NUM})${SLACK_FAILURE_SUMMARY}" \
                 '{channel: $channel, thread_ts: $thread_ts, text: $text}')" \
             > /dev/null 2>&1 || echo "WARNING: Failed to post Jira link to Slack thread"
           fi
@@ -482,7 +496,7 @@ spec:
               -d "$(jq -n \
                 --arg channel "$CHANNEL_ID" \
                 --arg thread_ts "$THREAD_TS" \
-                --arg text ":jira: Build Buddy: created new issue <${JIRA_URL}/browse/${NEW_KEY}|${NEW_KEY}>" \
+                --arg text ":jira: Build Buddy: created new issue <${JIRA_URL}/browse/${NEW_KEY}|${NEW_KEY}>${SLACK_FAILURE_SUMMARY}" \
                 '{channel: $channel, thread_ts: $thread_ts, text: $text}')" \
             > /dev/null 2>&1 || echo "WARNING: Failed to post Jira link to Slack thread"
           fi
