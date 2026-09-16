@@ -65,7 +65,7 @@ spec:
       # ---------------------------------------------------------------
       echo "Fetching early-gate config from OKC..."
       CONFIG_URL="https://api.github.com/repos/opendatahub-io/odh-konflux-central/contents/config/early-gate-config.yaml?ref=main"
-      CONFIG_RAW=$(curl -sSf -H "Accept: application/vnd.github.v3+json" "$CONFIG_URL" | jq -r '.content' | base64 -d)
+      CONFIG_RAW=$(curl -sSf -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" "$CONFIG_URL" | jq -r '.content' | base64 -d)
 
       if [ -z "$CONFIG_RAW" ]; then
           echo "Error: Could not fetch early-gate-config.yaml"
