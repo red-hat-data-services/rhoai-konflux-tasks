@@ -83,7 +83,7 @@ spec:
             echo "Querying: $api_url" >&2
 
             # Make API request and extract the manifest digest
-            response=$(curl -s "$api_url")
+            response=$(curl -fsSL "$api_url")
 
             # Get the latest (first) tag's manifest digest
             manifest_digest=$(echo "$response" | jq -r '.tags[0].manifest_digest // empty')
@@ -101,7 +101,7 @@ spec:
                 manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${manifest_digest}"
                 echo "Querying manifest: $manifest_api_url" >&2
 
-                manifest_response=$(curl -s "$manifest_api_url")
+                manifest_response=$(curl -fsSL "$manifest_api_url")
                 echo "manifest_response=${manifest_response}" >&2
 
                 # Check if this is a manifest list (multi-arch image)
@@ -112,7 +112,10 @@ spec:
                     echo "Multi-arch image detected, extracting first manifest digest" >&2
 
                     # Get the digest of the first manifest in the list
-                    first_manifest_digest=$(echo "$manifest_response" | jq -r '.manifest_data' | jq -r '.manifests[0].digest // empty')
+                    first_manifest_digest=$(echo "$manifest_response" | jq -r '
+                        .manifest_data
+                        | if type == "string" then fromjson else . end
+                        | .manifests[0].digest // empty')
 
                     if [ -z "$first_manifest_digest" ]; then
                         echo "Warning: No manifest found in manifest list" >&2
@@ -121,15 +124,30 @@ spec:
                     else
                         echo "First manifest digest: $first_manifest_digest" >&2
 
-                        # Query API again with the specific manifest digest
-                        specific_manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${first_manifest_digest}/labels"
+                        # Fetch the child manifest and resolve its config blob. Quay's
+                        # /labels endpoint does not expose OCI config labels for child
+                        # manifests in a multi-arch image.
+                        specific_manifest_api_url="https://quay.io/api/v1/repository/${namespace}/${repository}/manifest/${first_manifest_digest}"
                         echo "Querying specific manifest: $specific_manifest_api_url" >&2
 
-                        specific_manifest_response=$(curl -s "$specific_manifest_api_url")
+                        specific_manifest_response=$(curl -fsS "$specific_manifest_api_url")
                         echo "specific_manifest_response=${specific_manifest_response}"
-                        # Extract git.url and git.commit labels from the specific manifest
-                        git_url=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.url") | .value// empty')
-                        git_commit=$(echo "$specific_manifest_response" | jq -r '.labels[] | select(.key == "git.commit") | .value// empty')
+                        config_digest=$(echo "$specific_manifest_response" | jq -r '
+                            .manifest_data
+                            | if type == "string" then fromjson else . end
+                            | .config.digest // empty')
+
+                        if [ -z "$config_digest" ]; then
+                            echo "Warning: No config found for child manifest $first_manifest_digest" >&2
+                            git_url=""
+                            git_commit=""
+                        else
+                            config_api_url="https://quay.io/v2/${namespace}/${repository}/blobs/${config_digest}"
+                            echo "Querying image config: $config_api_url" >&2
+                            config_response=$(curl -fsSL "$config_api_url")
+                            git_url=$(echo "$config_response" | jq -r '.config.Labels["git.url"] // empty')
+                            git_commit=$(echo "$config_response" | jq -r '.config.Labels["git.commit"] // empty')
+                        fi
                     fi
                 else
                     echo "Single-arch image, extracting labels directly" >&2
@@ -141,6 +159,12 @@ spec:
 
                 echo "Git URL: $git_url" >&2
                 echo "Git Commit: $git_commit" >&2
+            fi
+
+            # Every snapshot image must retain provenance for audit and traceability.
+            if [ -z "$git_url" ] || [ -z "$git_commit" ]; then
+                echo "ERROR: Required git metadata is missing for $component" >&2
+                exit 1
             fi
 
             # Add to output JSON with image URI, git.url, and git.commit
