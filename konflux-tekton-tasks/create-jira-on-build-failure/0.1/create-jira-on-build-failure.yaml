@@ -1,0 +1,457 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: create-jira-on-build-failure
+  labels:
+    app.kubernetes.io/part-of: rhoai-konflux
+spec:
+  description: |
+    Creates or updates a Jira issue in RHOAIENG when a Konflux pipeline fails.
+    One card per component per RHOAI version (non-duplicating).
+    Build-task failures are assigned to the component team; other failures to DevOps.
+    Source mapping: gitlab.cee.redhat.com/prodsec/product-definitions ps_modules.json
+  params:
+  - name: component-name
+    type: string
+    description: Konflux component name (e.g., odh-kserve-controller-v3-4)
+  - name: display-name
+    type: string
+    default: ""
+    description: Human-readable display name from rhoai-init
+  - name: rhoai-version
+    type: string
+    description: RHOAI version (e.g., 3.4 or 3.4.1)
+  - name: pipelinerun-name
+    type: string
+    description: Name of the PipelineRun
+  - name: git-url
+    type: string
+    description: Source repository URL
+  - name: revision
+    type: string
+    description: Git revision (commit SHA)
+  - name: output-image
+    type: string
+    description: Fully qualified output image reference
+  - name: build-task-status
+    type: string
+    description: Status of the build task (Failed/Succeeded/None). Used to determine Jira component assignment.
+  - name: jira-project
+    type: string
+    default: "RHOAIENG"
+    description: Jira project key
+  - name: dry-run
+    type: string
+    default: "false"
+    description: When true, logs what would happen without creating/updating Jira issues
+  results:
+  - name: jira-issue-key
+    description: Jira issue key (empty if skipped or failed)
+  - name: jira-action
+    description: created, updated, or skipped
+  steps:
+  - name: create-or-update-jira
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    env:
+    - name: JIRA_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: rhoai-jira-automation
+          key: token
+    - name: COMPONENT_NAME
+      value: $(params.component-name)
+    - name: DISPLAY_NAME
+      value: $(params.display-name)
+    - name: RHOAI_VERSION
+      value: $(params.rhoai-version)
+    - name: PIPELINE_RUN_NAME
+      value: $(params.pipelinerun-name)
+    - name: GIT_URL
+      value: $(params.git-url)
+    - name: REVISION
+      value: $(params.revision)
+    - name: OUTPUT_IMAGE
+      value: $(params.output-image)
+    - name: BUILD_TASK_STATUS
+      value: $(params.build-task-status)
+    - name: JIRA_PROJECT
+      value: $(params.jira-project)
+    - name: DRY_RUN
+      value: $(params.dry-run)
+    - name: BUILD_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/log-url']
+    - name: COMMIT_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha-url']
+    - name: TARGET_BRANCH
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
+    - name: PIPELINE_RUN_NAMESPACE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: APPLICATION_LABEL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['appstudio.openshift.io/application']
+    - name: COMPONENT_LABEL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['appstudio.openshift.io/component']
+    script: |
+      #!/bin/bash
+      set -eo pipefail
+
+      microdnf install -y --nodocs curl jq > /dev/null 2>&1
+
+      JIRA_BASE="https://issues.redhat.com"
+      AUTH_HEADER="Authorization: Bearer ${JIRA_TOKEN}"
+      SHORT_REV="${REVISION:0:7}"
+      TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      REPO_NAME=$(echo "$GIT_URL" | sed 's|.*/||;s|\.git$||')
+
+      # ── Step 1: Strip version suffix to get base component name ──
+      BASE_COMP=$(echo "$COMPONENT_NAME" | sed 's/-v[0-9]*-[0-9]*$//')
+      echo "Component: $COMPONENT_NAME (base: $BASE_COMP)"
+
+      # ── Step 2: Construct Konflux console component URL ──
+      KONFLUX_UI_BASE="https://konflux-ui.apps.stone-prod-p02.hjvn.p1.openshiftapps.com"
+      KONFLUX_COMPONENT_URL="${KONFLUX_UI_BASE}/ns/${PIPELINE_RUN_NAMESPACE}/applications/${APPLICATION_LABEL}/components/${COMPONENT_LABEL}"
+
+      # ── Step 3: Lookup Jira component from embedded mapping ──
+      declare -A COMPONENT_MAP=(
+          ["odh-agents-operator"]="AgentOps"
+          ["odh-ai-gateway-controller"]="AI Gateway"
+          ["odh-ai-gateway-operator"]="Model as a Service"
+          ["odh-ai-gateway-payload-processing"]="Inference Gateway"
+          ["odh-automl"]="AutoML"
+          ["odh-autorag"]="AutoRAG"
+          ["odh-built-in-detector"]="AI Guardrails"
+          ["odh-caikit-nlp"]="AI Safety"
+          ["odh-caikit-tgis-serving"]="Model Runtimes"
+          ["odh-cli"]="AI Core Platform"
+          ["odh-codeflare-operator"]="KubeRay"
+          ["odh-dashboard"]="AI Core Dashboard"
+          ["odh-data-science-pipelines-argo-argoexec"]="AI Pipelines"
+          ["odh-data-science-pipelines-argo-workflowcontroller"]="AI Pipelines"
+          ["odh-data-science-pipelines-operator-controller"]="AI Pipelines"
+          ["odh-eval-hub"]="AI Evaluations"
+          ["odh-feast-operator"]="Feature Store"
+          ["odh-feature-server"]="Feature Store"
+          ["odh-fms-guardrails-orchestrator"]="AI Guardrails"
+          ["odh-guardrails-detector-huggingface-runtime"]="AI Guardrails"
+          ["odh-kf-notebook-controller"]="Notebooks Server"
+          ["odh-kserve-agent"]="Serving Orchestration"
+          ["odh-kserve-autogluon-server"]="AutoML"
+          ["odh-kserve-controller"]="Serving Orchestration"
+          ["odh-kserve-llmisvc-controller"]="Serving Orchestration"
+          ["odh-kserve-module-operator"]="Serving Orchestration"
+          ["odh-kserve-router"]="Serving Orchestration"
+          ["odh-kserve-storage-initializer"]="Serving Orchestration"
+          ["odh-kube-auth-proxy"]="AI Core Platform"
+          ["odh-kube-rbac-proxy"]="AI Core Platform"
+          ["odh-kuberay-operator-controller"]="KubeRay"
+          ["odh-kueue-controller"]="AgentOps"
+          ["odh-latency-predictor-prediction"]="llm-d"
+          ["odh-latency-predictor-test"]="llm-d"
+          ["odh-latency-predictor-training"]="llm-d"
+          ["odh-llama-stack-core"]="OGX Core"
+          ["odh-llama-stack-k8s-operator"]="OGX Core"
+          ["odh-llm-d-async"]="llm-d"
+          ["odh-llm-d-batch-gateway-apiserver"]="llm-d"
+          ["odh-llm-d-batch-gateway-gc"]="llm-d"
+          ["odh-llm-d-batch-gateway-operator"]="llm-d"
+          ["odh-llm-d-batch-gateway-processor"]="llm-d"
+          ["odh-llm-d-inference-scheduler"]="llm-d"
+          ["odh-llm-d-kv-cache"]="llm-d"
+          ["odh-llm-d-router-disagg-sidecar"]="llm-d"
+          ["odh-llm-d-router-endpoint-picker"]="llm-d"
+          ["odh-llm-d-routing-sidecar"]="llm-d"
+          ["odh-maas-api"]="Model as a Service"
+          ["odh-maas-controller"]="Model as a Service"
+          ["odh-mcp-lifecycle-module-operator"]="OCPMCPLO"
+          ["odh-mcp-lifecycle-operator"]="OCPMCPLO"
+          ["odh-ml-pipelines-api-server-v2"]="AI Pipelines"
+          ["odh-ml-pipelines-driver"]="AI Pipelines"
+          ["odh-ml-pipelines-launcher"]="AI Pipelines"
+          ["odh-ml-pipelines-persistenceagent-v2"]="AI Pipelines"
+          ["odh-ml-pipelines-runtime-generic"]="AI Pipelines"
+          ["odh-ml-pipelines-scheduledworkflow-v2"]="AI Pipelines"
+          ["odh-mlflow"]="MLflow"
+          ["odh-mlflow-operator"]="MLflow"
+          ["odh-mlmd-grpc-server"]="AI Hub"
+          ["odh-mlserver"]="Model Runtimes"
+          ["odh-mlserver-cuda"]="Model Runtimes"
+          ["odh-mm-rest-proxy"]="Serving Orchestration"
+          ["odh-mod-arch-agent-ops"]="AI Core Dashboard"
+          ["odh-mod-arch-automl"]="AI Core Dashboard"
+          ["odh-mod-arch-autorag"]="AI Core Dashboard"
+          ["odh-mod-arch-data-registry"]="AI Core Dashboard"
+          ["odh-mod-arch-eval-hub"]="AI Core Dashboard"
+          ["odh-mod-arch-gen-ai"]="AI Core Dashboard"
+          ["odh-mod-arch-maas"]="AI Core Dashboard"
+          ["odh-mod-arch-mlflow"]="AI Core Dashboard"
+          ["odh-mod-arch-model-registry"]="AI Core Dashboard"
+          ["odh-model-controller"]="Serving Orchestration"
+          ["odh-model-metadata-collection"]="AI Hub"
+          ["odh-model-performance-data"]="AI Evaluations"
+          ["odh-model-registry"]="AI Hub"
+          ["odh-model-registry-job-async-upload"]="AI Hub"
+          ["odh-model-registry-operator"]="AI Hub"
+          ["odh-model-serving-api"]="Serving Orchestration"
+          ["odh-modelmesh"]="Serving Orchestration"
+          ["odh-modelmesh-runtime-adapter"]="Serving Orchestration"
+          ["odh-modelmesh-serving-controller"]="Serving Orchestration"
+          ["odh-must-gather"]="AI Core Platform"
+          ["odh-notebook-controller"]="Notebooks Server"
+          ["odh-observability"]="AI Core Platform"
+          ["odh-ogx-core"]="OGX Core"
+          ["odh-ogx-k8s-operator"]="OGX Core"
+          ["odh-ogx-module-operator"]="OGX Core"
+          ["odh-openshell-cli"]="AgentOps"
+          ["odh-openshell-gateway"]="AgentOps"
+          ["odh-openshell-sandbox"]="AgentOps"
+          ["odh-openshell-supervisor"]="AgentOps"
+          ["odh-openvino-model-server"]="Model Runtimes"
+          ["odh-operator"]="AI Core Platform"
+          ["odh-operator-bundle"]="AI Core Platform"
+          ["odh-pipeline-runtime-datascience-cpu-py311"]="Notebooks Images"
+          ["odh-pipeline-runtime-datascience-cpu-py312"]="Notebooks Images"
+          ["odh-pipeline-runtime-minimal-cpu-py311"]="Notebooks Images"
+          ["odh-pipeline-runtime-minimal-cpu-py312"]="Notebooks Images"
+          ["odh-pipeline-runtime-pytorch-cuda-py311"]="Notebooks Images"
+          ["odh-pipeline-runtime-pytorch-cuda-py312"]="Notebooks Images"
+          ["odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312"]="Notebooks Images"
+          ["odh-pipeline-runtime-pytorch-rocm-py311"]="Notebooks Images"
+          ["odh-pipeline-runtime-pytorch-rocm-py312"]="Notebooks Images"
+          ["odh-pipeline-runtime-tensorflow-cuda-py311"]="Notebooks Images"
+          ["odh-pipeline-runtime-tensorflow-cuda-py312"]="Notebooks Images"
+          ["odh-pipeline-runtime-tensorflow-rocm-py311"]="Notebooks Images"
+          ["odh-pipeline-runtime-tensorflow-rocm-py312"]="Notebooks Images"
+          ["odh-pipelines-components"]="AI Pipelines"
+          ["odh-rhaii-cluster-validator"]="llm-d"
+          ["odh-rhaii-validator-tools"]="llm-d"
+          ["odh-rhel9-operator"]="AI Core Platform"
+          ["odh-rhoai-mcp"]="AI Navigator"
+          ["odh-spark-operator"]="Kubeflow Spark Operator"
+          ["odh-ta-lmes-driver"]="AI Evaluations"
+          ["odh-ta-lmes-job"]="AI Evaluations"
+          ["odh-th06-cpu-torch210-py312"]="Training Kubeflow"
+          ["odh-th06-cpu-torch291-py312"]="Training Kubeflow"
+          ["odh-th06-cuda130-torch210-py312"]="Training Kubeflow"
+          ["odh-th06-cuda130-torch291-py312"]="Training Kubeflow"
+          ["odh-th06-rocm64-torch291-py312"]="Training Kubeflow"
+          ["odh-trainer"]="Training Kubeflow"
+          ["odh-trainer-operator"]="Training Kubeflow"
+          ["odh-training-cuda121-torch24-py311"]="Training Kubeflow"
+          ["odh-training-cuda124-torch25-py311"]="Training Kubeflow"
+          ["odh-training-cuda128-torch28-py312"]="Training Kubeflow"
+          ["odh-training-cuda128-torch29-py312"]="Training Kubeflow"
+          ["odh-training-operator"]="Training Kubeflow"
+          ["odh-training-rocm62-torch24-py311"]="Training Kubeflow"
+          ["odh-training-rocm62-torch25-py311"]="Training Kubeflow"
+          ["odh-training-rocm64-torch28-py312"]="Training Kubeflow"
+          ["odh-training-rocm64-torch29-py312"]="Training Kubeflow"
+          ["odh-trustyai-garak-lls-provider-dsp"]="AI Evaluations"
+          ["odh-trustyai-nemo-guardrails-server"]="AI Guardrails"
+          ["odh-trustyai-ragas-lls-provider-dsp"]="AI Evaluations"
+          ["odh-trustyai-service"]="AI Safety"
+          ["odh-trustyai-service-operator"]="AI Safety Orchestration"
+          ["odh-trustyai-vllm-orchestrator-gateway"]="AI Guardrails"
+          ["odh-vllm-cpu"]="Model Runtimes"
+          ["odh-vllm-cuda"]="Model Runtimes"
+          ["odh-vllm-gaudi"]="Model Runtimes"
+          ["odh-vllm-rocm"]="Model Runtimes"
+          ["odh-wb-jupyter-pytorch-llmcompressor-cuda-py312"]="Notebooks Images"
+          ["odh-workbench-codeserver-datascience-cpu-py311"]="Notebooks Images"
+          ["odh-workbench-codeserver-datascience-cpu-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-datascience-cpu-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-datascience-cpu-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-minimal-cpu-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-minimal-cpu-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-minimal-cuda-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-minimal-cuda-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-minimal-rocm-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-minimal-rocm-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-pytorch-cuda-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-pytorch-cuda-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-pytorch-llmcompressor-cuda-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-pytorch-rocm-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-pytorch-rocm-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-tensorflow-cuda-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-tensorflow-cuda-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-tensorflow-rocm-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-tensorflow-rocm-py312"]="Notebooks Images"
+          ["odh-workbench-jupyter-trustyai-cpu-py311"]="Notebooks Images"
+          ["odh-workbench-jupyter-trustyai-cpu-py312"]="Notebooks Images"
+          ["odh-workload-variant-autoscaler-controller"]="llm-d"
+          ["rhai-cli"]="AI Core Platform"
+          ["rhai-on-openshift-chart"]="AI Core Platform"
+          ["rhai-on-xks-chart"]="AI Core Platform"
+          ["rhoai-fbc-fragment"]="DevOps"
+      )
+
+      JIRA_COMPONENT="${COMPONENT_MAP[$BASE_COMP]:-DevOps}"
+
+      # ── Step 4: If build task did NOT fail, override to DevOps ──
+      if [ "$BUILD_TASK_STATUS" != "Failed" ]; then
+        echo "Build task status is '$BUILD_TASK_STATUS' (not Failed) — assigning to DevOps"
+        JIRA_COMPONENT="DevOps"
+      fi
+      echo "Jira component: $JIRA_COMPONENT"
+
+      # ── Step 5: Build labels for dedup ──
+      VERSION_LABEL="version:${RHOAI_VERSION}"
+      COMP_LABEL="component:${BASE_COMP}"
+      echo "Dedup labels: $COMP_LABEL, $VERSION_LABEL"
+
+      # ── Step 6: Build metadata YAML ──
+      cat > /tmp/build-failure-metadata.yaml <<METADATA_EOF
+      component: ${COMPONENT_NAME}
+      base_component: ${BASE_COMP}
+      display_name: ${DISPLAY_NAME}
+      repository: ${GIT_URL}
+      revision: ${REVISION}
+      revision_short: ${SHORT_REV}
+      pipelinerun: ${PIPELINE_RUN_NAME}
+      build_log_url: ${BUILD_URL}
+      commit_url: ${COMMIT_URL}
+      konflux_component_url: ${KONFLUX_COMPONENT_URL}
+      output_image: ${OUTPUT_IMAGE}
+      rhoai_version: ${RHOAI_VERSION}
+      target_branch: ${TARGET_BRANCH}
+      build_task_status: ${BUILD_TASK_STATUS}
+      jira_component: ${JIRA_COMPONENT}
+      namespace: ${PIPELINE_RUN_NAMESPACE}
+      timestamp: ${TIMESTAMP}
+      METADATA_EOF
+
+      # ── Step 7: Dry-run check ──
+      if [ "$DRY_RUN" = "true" ]; then
+        echo "DRY RUN — would search for existing issue with JQL:"
+        echo "  project = $JIRA_PROJECT AND labels = zstream-build-failure AND labels = \"$COMP_LABEL\" AND labels = \"$VERSION_LABEL\" AND status NOT IN (Done, Closed, Resolved)"
+        echo "Would create/update issue with:"
+        echo "  Summary: [Build Failure] ${DISPLAY_NAME:-$BASE_COMP} - ${TARGET_BRANCH}"
+        echo "  Component: $JIRA_COMPONENT"
+        echo "  Labels: rhoai-sustaining, zstream-build-failure, $COMP_LABEL, $VERSION_LABEL"
+        echo "  Build Log: $BUILD_URL"
+        echo "  Commit: $COMMIT_URL"
+        echo "  GitHub Repo: $GIT_URL"
+        echo "  Konflux Component: $KONFLUX_COMPONENT_URL"
+        cat /tmp/build-failure-metadata.yaml
+        printf "" > "$(results.jira-issue-key.path)"
+        printf "skipped" > "$(results.jira-action.path)"
+        exit 0
+      fi
+
+      # ── Step 8: Duplicate detection — one card per component per version ──
+      JQL="project = $JIRA_PROJECT AND labels = zstream-build-failure AND labels = \"$COMP_LABEL\" AND labels = \"$VERSION_LABEL\" AND status NOT IN (Done, Closed, Resolved)"
+      echo "Searching for existing issue: $JQL"
+
+      SEARCH_RESPONSE=$(curl -sf -X POST "${JIRA_BASE}/rest/api/2/search" \
+        -H "$AUTH_HEADER" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg jql "$JQL" '{jql: $jql, maxResults: 1, fields: ["key","status","summary"]}')" \
+      ) || {
+        echo "WARNING: Jira search failed — will attempt to create new issue"
+        SEARCH_RESPONSE='{"total":0}'
+      }
+
+      EXISTING_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r '.total // 0')
+
+      if [ "$EXISTING_COUNT" -gt 0 ]; then
+        # ── Update existing issue with comment ──
+        EXISTING_KEY=$(echo "$SEARCH_RESPONSE" | jq -r '.issues[0].key')
+        echo "Found existing issue $EXISTING_KEY — adding comment"
+
+        COMMENT_BODY="New build failure detected at $TIMESTAMP\n\n\
+      *PipelineRun:* $PIPELINE_RUN_NAME\n\
+      *Revision:* [$SHORT_REV|$COMMIT_URL]\n\
+      *Build Task Status:* $BUILD_TASK_STATUS\n\n\
+      *Links:*\n\
+      - [Build Log|$BUILD_URL]\n\
+      - [Commit|$COMMIT_URL]\n\
+      - [GitHub Repo|$GIT_URL]\n\
+      - [Konflux Component|$KONFLUX_COMPONENT_URL]"
+
+        curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue/${EXISTING_KEY}/comment" \
+          -H "$AUTH_HEADER" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg body "$COMMENT_BODY" '{body: $body}')" \
+          && echo "Comment added to $EXISTING_KEY" \
+          || echo "WARNING: Failed to add comment to $EXISTING_KEY"
+
+        curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue/${EXISTING_KEY}/attachments" \
+          -H "$AUTH_HEADER" \
+          -H "X-Atlassian-Token: no-check" \
+          -F "file=@/tmp/build-failure-metadata.yaml" \
+          > /dev/null 2>&1 || echo "WARNING: Failed to attach metadata to $EXISTING_KEY"
+
+        printf "%s" "$EXISTING_KEY" > "$(results.jira-issue-key.path)"
+        printf "updated" > "$(results.jira-action.path)"
+      else
+        # ── Create new issue ──
+        echo "No existing issue — creating new Jira issue"
+
+        ISSUE_SUMMARY="[Build Failure] ${DISPLAY_NAME:-$BASE_COMP} - ${TARGET_BRANCH}"
+
+        ISSUE_DESCRIPTION="Automated build failure detected by Konflux pipeline.\n\n\
+      *Component:* $COMPONENT_NAME\n\
+      *Repository:* [$REPO_NAME|$GIT_URL]\n\
+      *Branch:* $TARGET_BRANCH\n\
+      *RHOAI Version:* $RHOAI_VERSION\n\
+      *Build Task Status:* $BUILD_TASK_STATUS\n\n\
+      *Links:*\n\
+      - [Build Log|$BUILD_URL] (PipelineRun logs)\n\
+      - [Commit|$COMMIT_URL] (triggering commit)\n\
+      - [GitHub Repo|$GIT_URL] (source repository)\n\
+      - [Konflux Component|$KONFLUX_COMPONENT_URL] (component page)\n\n\
+      See attached build-failure-metadata.yaml for structured data."
+
+        CREATE_PAYLOAD=$(jq -n \
+          --arg project "$JIRA_PROJECT" \
+          --arg summary "$ISSUE_SUMMARY" \
+          --arg description "$ISSUE_DESCRIPTION" \
+          --arg comp_label "$COMP_LABEL" \
+          --arg version_label "$VERSION_LABEL" \
+          --arg jira_component "$JIRA_COMPONENT" \
+          '{
+            fields: {
+              project: {key: $project},
+              summary: $summary,
+              description: $description,
+              issuetype: {name: "Bug"},
+              labels: ["rhoai-sustaining", "zstream-build-failure", $comp_label, $version_label],
+              components: [{name: $jira_component}]
+            }
+          }')
+
+        CREATE_RESPONSE=$(curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue" \
+          -H "$AUTH_HEADER" \
+          -H "Content-Type: application/json" \
+          -d "$CREATE_PAYLOAD" \
+        ) || {
+          echo "ERROR: Failed to create Jira issue"
+          printf "" > "$(results.jira-issue-key.path)"
+          printf "skipped" > "$(results.jira-action.path)"
+          exit 0
+        }
+
+        NEW_KEY=$(echo "$CREATE_RESPONSE" | jq -r '.key')
+        echo "Created Jira issue: $NEW_KEY"
+
+        curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue/${NEW_KEY}/attachments" \
+          -H "$AUTH_HEADER" \
+          -H "X-Atlassian-Token: no-check" \
+          -F "file=@/tmp/build-failure-metadata.yaml" \
+          > /dev/null 2>&1 || echo "WARNING: Failed to attach metadata to $NEW_KEY"
+
+        printf "%s" "$NEW_KEY" > "$(results.jira-issue-key.path)"
+        printf "created" > "$(results.jira-action.path)"
+      fi
+
+      echo "create-jira-on-build-failure complete"
