@@ -9,7 +9,7 @@ spec:
     Creates or updates a Jira issue in RHOAIENG when a Konflux pipeline fails.
     One card per component per RHOAI version (non-duplicating).
     Build-task failures are assigned to the component team; other failures to DevOps.
-    Source mapping: gitlab.cee.redhat.com/prodsec/product-definitions ps_modules.json
+    Source mapping: konflux-central/config/component-jira-mapping.yaml (fetched at runtime)
   params:
   - name: component-name
     type: string
@@ -44,6 +44,10 @@ spec:
     type: string
     default: "false"
     description: When true, logs what would happen without creating/updating Jira issues
+  - name: component-mapping-url
+    type: string
+    default: "https://raw.githubusercontent.com/red-hat-data-services/konflux-central/main/config/component-jira-mapping.yaml"
+    description: URL of the single-source Konflux-to-Jira component mapping YAML in konflux-central
   results:
   - name: jira-issue-key
     description: Jira issue key (empty if skipped or failed)
@@ -78,6 +82,8 @@ spec:
       value: $(params.jira-project)
     - name: DRY_RUN
       value: $(params.dry-run)
+    - name: COMPONENT_MAPPING_URL
+      value: $(params.component-mapping-url)
     - name: BUILD_URL
       valueFrom:
         fieldRef:
@@ -122,180 +128,38 @@ spec:
       KONFLUX_UI_BASE="https://konflux-ui.apps.stone-prod-p02.hjvn.p1.openshiftapps.com"
       KONFLUX_COMPONENT_URL="${KONFLUX_UI_BASE}/ns/${PIPELINE_RUN_NAMESPACE}/applications/${APPLICATION_LABEL}/components/${COMPONENT_LABEL}"
 
-      # ── Step 3: Lookup Jira component from embedded mapping ──
-      declare -A COMPONENT_MAP=(
-          ["odh-agents-operator"]="AgentOps"
-          ["odh-ai-gateway-controller"]="AI Gateway"
-          ["odh-ai-gateway-operator"]="Model as a Service"
-          ["odh-ai-gateway-payload-processing"]="Inference Gateway"
-          ["odh-automl"]="AutoML"
-          ["odh-autorag"]="AutoRAG"
-          ["odh-built-in-detector"]="AI Guardrails"
-          ["odh-caikit-nlp"]="AI Safety"
-          ["odh-caikit-tgis-serving"]="Model Runtimes"
-          ["odh-cli"]="AI Core Platform"
-          ["odh-codeflare-operator"]="KubeRay"
-          ["odh-dashboard"]="AI Core Dashboard"
-          ["odh-data-science-pipelines-argo-argoexec"]="AI Pipelines"
-          ["odh-data-science-pipelines-argo-workflowcontroller"]="AI Pipelines"
-          ["odh-data-science-pipelines-operator-controller"]="AI Pipelines"
-          ["odh-eval-hub"]="AI Evaluations"
-          ["odh-feast-operator"]="Feature Store"
-          ["odh-feature-server"]="Feature Store"
-          ["odh-fms-guardrails-orchestrator"]="AI Guardrails"
-          ["odh-guardrails-detector-huggingface-runtime"]="AI Guardrails"
-          ["odh-kf-notebook-controller"]="Notebooks Server"
-          ["odh-kserve-agent"]="Serving Orchestration"
-          ["odh-kserve-autogluon-server"]="AutoML"
-          ["odh-kserve-controller"]="Serving Orchestration"
-          ["odh-kserve-llmisvc-controller"]="Serving Orchestration"
-          ["odh-kserve-module-operator"]="Serving Orchestration"
-          ["odh-kserve-router"]="Serving Orchestration"
-          ["odh-kserve-storage-initializer"]="Serving Orchestration"
-          ["odh-kube-auth-proxy"]="AI Core Platform"
-          ["odh-kube-rbac-proxy"]="AI Core Platform"
-          ["odh-kuberay-operator-controller"]="KubeRay"
-          ["odh-kueue-controller"]="AgentOps"
-          ["odh-latency-predictor-prediction"]="llm-d"
-          ["odh-latency-predictor-test"]="llm-d"
-          ["odh-latency-predictor-training"]="llm-d"
-          ["odh-llama-stack-core"]="OGX Core"
-          ["odh-llama-stack-k8s-operator"]="OGX Core"
-          ["odh-llm-d-async"]="llm-d"
-          ["odh-llm-d-batch-gateway-apiserver"]="llm-d"
-          ["odh-llm-d-batch-gateway-gc"]="llm-d"
-          ["odh-llm-d-batch-gateway-operator"]="llm-d"
-          ["odh-llm-d-batch-gateway-processor"]="llm-d"
-          ["odh-llm-d-inference-scheduler"]="llm-d"
-          ["odh-llm-d-kv-cache"]="llm-d"
-          ["odh-llm-d-router-disagg-sidecar"]="llm-d"
-          ["odh-llm-d-router-endpoint-picker"]="llm-d"
-          ["odh-llm-d-routing-sidecar"]="llm-d"
-          ["odh-maas-api"]="Model as a Service"
-          ["odh-maas-controller"]="Model as a Service"
-          ["odh-mcp-lifecycle-module-operator"]="OCPMCPLO"
-          ["odh-mcp-lifecycle-operator"]="OCPMCPLO"
-          ["odh-ml-pipelines-api-server-v2"]="AI Pipelines"
-          ["odh-ml-pipelines-driver"]="AI Pipelines"
-          ["odh-ml-pipelines-launcher"]="AI Pipelines"
-          ["odh-ml-pipelines-persistenceagent-v2"]="AI Pipelines"
-          ["odh-ml-pipelines-runtime-generic"]="AI Pipelines"
-          ["odh-ml-pipelines-scheduledworkflow-v2"]="AI Pipelines"
-          ["odh-mlflow"]="MLflow"
-          ["odh-mlflow-operator"]="MLflow"
-          ["odh-mlmd-grpc-server"]="AI Hub"
-          ["odh-mlserver"]="Model Runtimes"
-          ["odh-mlserver-cuda"]="Model Runtimes"
-          ["odh-mm-rest-proxy"]="Serving Orchestration"
-          ["odh-mod-arch-agent-ops"]="AI Core Dashboard"
-          ["odh-mod-arch-automl"]="AI Core Dashboard"
-          ["odh-mod-arch-autorag"]="AI Core Dashboard"
-          ["odh-mod-arch-data-registry"]="AI Core Dashboard"
-          ["odh-mod-arch-eval-hub"]="AI Core Dashboard"
-          ["odh-mod-arch-gen-ai"]="AI Core Dashboard"
-          ["odh-mod-arch-maas"]="AI Core Dashboard"
-          ["odh-mod-arch-mlflow"]="AI Core Dashboard"
-          ["odh-mod-arch-model-registry"]="AI Core Dashboard"
-          ["odh-model-controller"]="Serving Orchestration"
-          ["odh-model-metadata-collection"]="AI Hub"
-          ["odh-model-performance-data"]="AI Evaluations"
-          ["odh-model-registry"]="AI Hub"
-          ["odh-model-registry-job-async-upload"]="AI Hub"
-          ["odh-model-registry-operator"]="AI Hub"
-          ["odh-model-serving-api"]="Serving Orchestration"
-          ["odh-modelmesh"]="Serving Orchestration"
-          ["odh-modelmesh-runtime-adapter"]="Serving Orchestration"
-          ["odh-modelmesh-serving-controller"]="Serving Orchestration"
-          ["odh-must-gather"]="AI Core Platform"
-          ["odh-notebook-controller"]="Notebooks Server"
-          ["odh-observability"]="AI Core Platform"
-          ["odh-ogx-core"]="OGX Core"
-          ["odh-ogx-k8s-operator"]="OGX Core"
-          ["odh-ogx-module-operator"]="OGX Core"
-          ["odh-openshell-cli"]="AgentOps"
-          ["odh-openshell-gateway"]="AgentOps"
-          ["odh-openshell-sandbox"]="AgentOps"
-          ["odh-openshell-supervisor"]="AgentOps"
-          ["odh-openvino-model-server"]="Model Runtimes"
-          ["odh-operator"]="AI Core Platform"
-          ["odh-operator-bundle"]="AI Core Platform"
-          ["odh-pipeline-runtime-datascience-cpu-py311"]="Notebooks Images"
-          ["odh-pipeline-runtime-datascience-cpu-py312"]="Notebooks Images"
-          ["odh-pipeline-runtime-minimal-cpu-py311"]="Notebooks Images"
-          ["odh-pipeline-runtime-minimal-cpu-py312"]="Notebooks Images"
-          ["odh-pipeline-runtime-pytorch-cuda-py311"]="Notebooks Images"
-          ["odh-pipeline-runtime-pytorch-cuda-py312"]="Notebooks Images"
-          ["odh-pipeline-runtime-pytorch-llmcompressor-cuda-py312"]="Notebooks Images"
-          ["odh-pipeline-runtime-pytorch-rocm-py311"]="Notebooks Images"
-          ["odh-pipeline-runtime-pytorch-rocm-py312"]="Notebooks Images"
-          ["odh-pipeline-runtime-tensorflow-cuda-py311"]="Notebooks Images"
-          ["odh-pipeline-runtime-tensorflow-cuda-py312"]="Notebooks Images"
-          ["odh-pipeline-runtime-tensorflow-rocm-py311"]="Notebooks Images"
-          ["odh-pipeline-runtime-tensorflow-rocm-py312"]="Notebooks Images"
-          ["odh-pipelines-components"]="AI Pipelines"
-          ["odh-rhaii-cluster-validator"]="llm-d"
-          ["odh-rhaii-validator-tools"]="llm-d"
-          ["odh-rhel9-operator"]="AI Core Platform"
-          ["odh-rhoai-mcp"]="AI Navigator"
-          ["odh-spark-operator"]="Kubeflow Spark Operator"
-          ["odh-ta-lmes-driver"]="AI Evaluations"
-          ["odh-ta-lmes-job"]="AI Evaluations"
-          ["odh-th06-cpu-torch210-py312"]="Training Kubeflow"
-          ["odh-th06-cpu-torch291-py312"]="Training Kubeflow"
-          ["odh-th06-cuda130-torch210-py312"]="Training Kubeflow"
-          ["odh-th06-cuda130-torch291-py312"]="Training Kubeflow"
-          ["odh-th06-rocm64-torch291-py312"]="Training Kubeflow"
-          ["odh-trainer"]="Training Kubeflow"
-          ["odh-trainer-operator"]="Training Kubeflow"
-          ["odh-training-cuda121-torch24-py311"]="Training Kubeflow"
-          ["odh-training-cuda124-torch25-py311"]="Training Kubeflow"
-          ["odh-training-cuda128-torch28-py312"]="Training Kubeflow"
-          ["odh-training-cuda128-torch29-py312"]="Training Kubeflow"
-          ["odh-training-operator"]="Training Kubeflow"
-          ["odh-training-rocm62-torch24-py311"]="Training Kubeflow"
-          ["odh-training-rocm62-torch25-py311"]="Training Kubeflow"
-          ["odh-training-rocm64-torch28-py312"]="Training Kubeflow"
-          ["odh-training-rocm64-torch29-py312"]="Training Kubeflow"
-          ["odh-trustyai-garak-lls-provider-dsp"]="AI Evaluations"
-          ["odh-trustyai-nemo-guardrails-server"]="AI Guardrails"
-          ["odh-trustyai-ragas-lls-provider-dsp"]="AI Evaluations"
-          ["odh-trustyai-service"]="AI Safety"
-          ["odh-trustyai-service-operator"]="AI Safety Orchestration"
-          ["odh-trustyai-vllm-orchestrator-gateway"]="AI Guardrails"
-          ["odh-vllm-cpu"]="Model Runtimes"
-          ["odh-vllm-cuda"]="Model Runtimes"
-          ["odh-vllm-gaudi"]="Model Runtimes"
-          ["odh-vllm-rocm"]="Model Runtimes"
-          ["odh-wb-jupyter-pytorch-llmcompressor-cuda-py312"]="Notebooks Images"
-          ["odh-workbench-codeserver-datascience-cpu-py311"]="Notebooks Images"
-          ["odh-workbench-codeserver-datascience-cpu-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-datascience-cpu-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-datascience-cpu-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-minimal-cpu-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-minimal-cpu-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-minimal-cuda-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-minimal-cuda-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-minimal-rocm-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-minimal-rocm-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-pytorch-cuda-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-pytorch-cuda-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-pytorch-llmcompressor-cuda-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-pytorch-rocm-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-pytorch-rocm-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-tensorflow-cuda-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-tensorflow-cuda-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-tensorflow-rocm-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-tensorflow-rocm-py312"]="Notebooks Images"
-          ["odh-workbench-jupyter-trustyai-cpu-py311"]="Notebooks Images"
-          ["odh-workbench-jupyter-trustyai-cpu-py312"]="Notebooks Images"
-          ["odh-workload-variant-autoscaler-controller"]="llm-d"
-          ["rhai-cli"]="AI Core Platform"
-          ["rhai-on-openshift-chart"]="AI Core Platform"
-          ["rhai-on-xks-chart"]="AI Core Platform"
-          ["rhoai-fbc-fragment"]="DevOps"
-      )
-
-      JIRA_COMPONENT="${COMPONENT_MAP[$BASE_COMP]:-DevOps}"
+      # ── Step 3: Lookup Jira component from konflux-central mapping ──
+      MAPPING_FILE="/tmp/component-jira-mapping.yaml"
+      echo "Fetching component mapping from: ${COMPONENT_MAPPING_URL}"
+      if ! curl -sfL --retry 3 --retry-delay 2 -o "$MAPPING_FILE" "$COMPONENT_MAPPING_URL"; then
+        echo "WARNING: Failed to fetch component mapping — defaulting to DevOps"
+        JIRA_COMPONENT="DevOps"
+      else
+        JIRA_COMPONENT=$(awk -v key="$BASE_COMP" '
+          /^[[:space:]]*#/ { next }
+          /^[[:space:]]*$/ { next }
+          /^default:/ {
+            def=$2
+            gsub(/["]/, "", def)
+            next
+          }
+          $1 == key":" {
+            val=$0
+            sub(/^[[:space:]]*[^:]+:[[:space:]]*/, "", val)
+            gsub(/^["]|["][[:space:]]*$/, "", val)
+            print val
+            found=1
+            exit
+          }
+          END {
+            if (!found) {
+              if (def == "") def="DevOps"
+              print def
+            }
+          }
+        ' "$MAPPING_FILE")
+        echo "Mapped ${BASE_COMP} -> ${JIRA_COMPONENT} (from konflux-central mapping)"
+      fi
 
       # ── Step 4: If build task did NOT fail, override to DevOps ──
       if [ "$BUILD_TASK_STATUS" != "Failed" ]; then

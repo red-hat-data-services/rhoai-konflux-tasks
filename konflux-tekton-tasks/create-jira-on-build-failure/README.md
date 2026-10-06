@@ -5,7 +5,7 @@ Tekton Task that automatically creates or updates a Jira issue in RHOAIENG when 
 ## Behavior
 
 - **One card per component per version**: Deduplicates by Konflux component name + RHOAI version. If an open card already exists for the same component and version, a comment is added instead of creating a duplicate.
-- **Smart component assignment**: If the build task (`build-container` or `build-images`) failed, the Jira issue is assigned to the component team's Jira component (via embedded mapping from `ps_modules.json`). If a different task failed (scans, prefetch, SAST, etc.), the issue is assigned to `DevOps`.
+- **Smart component assignment**: If the build task (`build-container` or `build-images`) failed, the Jira issue is assigned to the component team's Jira component using the mapping in [konflux-central `config/component-jira-mapping.yaml`](https://github.com/red-hat-data-services/konflux-central/blob/main/config/component-jira-mapping.yaml). If a different task failed (scans, prefetch, SAST, etc.), the issue is assigned to `DevOps`.
 - **Labels**: Every card gets `rhoai-sustaining` and `zstream-build-failure`, plus `component:<base-name>` and `version:<rhoai-version>` for dedup.
 - **Metadata attachment**: A `build-failure-metadata.yaml` file is attached with structured build data.
 - **All relevant links** are included in the Jira description:
@@ -28,6 +28,7 @@ Tekton Task that automatically creates or updates a Jira issue in RHOAIENG when 
 | `build-task-status` | Yes | | Status of the build task (`Failed`/`Succeeded`/`None`) |
 | `jira-project` | No | `RHOAIENG` | Jira project key |
 | `dry-run` | No | `false` | When `true`, logs actions without hitting Jira |
+| `component-mapping-url` | No | konflux-central `main` mapping YAML | URL of the Konflux-to-Jira mapping (single source of truth in konflux-central) |
 
 ## Results
 
@@ -95,26 +96,23 @@ The task is wired into the `finally` block of both shared pipelines:
 
 The task only runs when:
 1. `pipeline-success-indicator.status != Succeeded` (pipeline failed)
-2. `rhoai-init.results.skip-slack-message == false` (not a PR pipeline)
-3. `params.disable-jira-notifications != true` (not opted out)
+2. `rhoai-init.results.cluster-mismatch == false` (expected cluster)
+3. `params.enable-jira-failure-notification == true` (not opted out)
 
 ### Opt-Out
 
 To disable Jira notifications for a specific component, add to its PipelineRun YAML:
 ```yaml
-- name: disable-jira-notifications
-  value: "true"
+- name: enable-jira-failure-notification
+  value: "false"
 ```
 
 ## Component Mapping
 
-The embedded mapping (169 entries) is derived from:
-- `gitlab.cee.redhat.com/prodsec/product-definitions` — `ps_modules.json` `openshift-ai.components.override`
-- 7 manual overrides for components not in `ps_modules.json`
+The mapping lives in **one place**: [`konflux-central/config/component-jira-mapping.yaml`](https://github.com/red-hat-data-services/konflux-central/blob/main/config/component-jira-mapping.yaml).
 
-A reference copy of the mapping is maintained at `konflux-central/config/component-jira-mapping.yaml`.
+The task fetches that file at runtime (`component-mapping-url`). Do not duplicate entries in this task.
 
-To update the mapping when new components are added:
-1. Check the latest `ps_modules.json` for the `openshift-ai` module
-2. Update the `declare -A COMPONENT_MAP` in the task script
-3. Update `konflux-central/config/component-jira-mapping.yaml`
+To add or change a component:
+1. Check the latest `ps_modules.json` `openshift-ai.components.override` in prodsec product-definitions
+2. Update only `konflux-central/config/component-jira-mapping.yaml`
