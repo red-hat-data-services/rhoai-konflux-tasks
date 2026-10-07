@@ -1,0 +1,321 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: create-jira-on-build-failure
+  labels:
+    app.kubernetes.io/part-of: rhoai-konflux
+spec:
+  description: |
+    Creates or updates a Jira issue in RHOAIENG when a Konflux pipeline fails.
+    One card per component per RHOAI version (non-duplicating).
+    Build-task failures are assigned to the component team; other failures to DevOps.
+    Source mapping: konflux-central/config/component-jira-mapping.yaml (fetched at runtime)
+  params:
+  - name: component-name
+    type: string
+    description: Konflux component name (e.g., odh-kserve-controller-v3-4)
+  - name: display-name
+    type: string
+    default: ""
+    description: Human-readable display name from rhoai-init
+  - name: rhoai-version
+    type: string
+    description: RHOAI version (e.g., 3.4 or 3.4.1)
+  - name: pipelinerun-name
+    type: string
+    description: Name of the PipelineRun
+  - name: git-url
+    type: string
+    description: Source repository URL
+  - name: revision
+    type: string
+    description: Git revision (commit SHA)
+  - name: output-image
+    type: string
+    description: Fully qualified output image reference
+  - name: build-task-status
+    type: string
+    description: Status of the build task (Failed/Succeeded/None). Used to determine Jira component assignment.
+  - name: jira-project
+    type: string
+    default: "RHOAIENG"
+    description: Jira project key
+  - name: dry-run
+    type: string
+    default: "false"
+    description: When true, logs what would happen without creating/updating Jira issues
+  - name: component-mapping-url
+    type: string
+    default: "https://raw.githubusercontent.com/red-hat-data-services/konflux-central/main/config/component-jira-mapping.yaml"
+    description: URL of the single-source Konflux-to-Jira component mapping YAML in konflux-central
+  results:
+  - name: jira-issue-key
+    description: Jira issue key (empty if skipped or failed)
+  - name: jira-action
+    description: created, updated, or skipped
+  steps:
+  - name: create-or-update-jira
+    image: registry.access.redhat.com/ubi9/ubi-minimal:latest
+    env:
+    - name: JIRA_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: rhoai-jira-automation
+          key: token
+    - name: COMPONENT_NAME
+      value: $(params.component-name)
+    - name: DISPLAY_NAME
+      value: $(params.display-name)
+    - name: RHOAI_VERSION
+      value: $(params.rhoai-version)
+    - name: PIPELINE_RUN_NAME
+      value: $(params.pipelinerun-name)
+    - name: GIT_URL
+      value: $(params.git-url)
+    - name: REVISION
+      value: $(params.revision)
+    - name: OUTPUT_IMAGE
+      value: $(params.output-image)
+    - name: BUILD_TASK_STATUS
+      value: $(params.build-task-status)
+    - name: JIRA_PROJECT
+      value: $(params.jira-project)
+    - name: DRY_RUN
+      value: $(params.dry-run)
+    - name: COMPONENT_MAPPING_URL
+      value: $(params.component-mapping-url)
+    - name: BUILD_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/log-url']
+    - name: COMMIT_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha-url']
+    - name: TARGET_BRANCH
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
+    - name: PIPELINE_RUN_NAMESPACE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.namespace
+    - name: APPLICATION_LABEL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['appstudio.openshift.io/application']
+    - name: COMPONENT_LABEL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['appstudio.openshift.io/component']
+    script: |
+      #!/bin/bash
+      set -eo pipefail
+
+      microdnf install -y --nodocs curl jq > /dev/null 2>&1
+
+      JIRA_BASE="https://issues.redhat.com"
+      AUTH_HEADER="Authorization: Bearer ${JIRA_TOKEN}"
+      SHORT_REV="${REVISION:0:7}"
+      TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      REPO_NAME=$(echo "$GIT_URL" | sed 's|.*/||;s|\.git$||')
+
+      # ── Step 1: Strip version suffix to get base component name ──
+      BASE_COMP=$(echo "$COMPONENT_NAME" | sed 's/-v[0-9]*-[0-9]*$//')
+      echo "Component: $COMPONENT_NAME (base: $BASE_COMP)"
+
+      # ── Step 2: Construct Konflux console component URL ──
+      KONFLUX_UI_BASE="https://konflux-ui.apps.stone-prod-p02.hjvn.p1.openshiftapps.com"
+      KONFLUX_COMPONENT_URL="${KONFLUX_UI_BASE}/ns/${PIPELINE_RUN_NAMESPACE}/applications/${APPLICATION_LABEL}/components/${COMPONENT_LABEL}"
+
+      # ── Step 3: Lookup Jira component from konflux-central mapping ──
+      MAPPING_FILE="/tmp/component-jira-mapping.yaml"
+      echo "Fetching component mapping from: ${COMPONENT_MAPPING_URL}"
+      if ! curl -sfL --retry 3 --retry-delay 2 -o "$MAPPING_FILE" "$COMPONENT_MAPPING_URL"; then
+        echo "WARNING: Failed to fetch component mapping — defaulting to DevOps"
+        JIRA_COMPONENT="DevOps"
+      else
+        JIRA_COMPONENT=$(awk -v key="$BASE_COMP" '
+          /^[[:space:]]*#/ { next }
+          /^[[:space:]]*$/ { next }
+          /^default:/ {
+            def=$2
+            gsub(/["]/, "", def)
+            next
+          }
+          $1 == key":" {
+            val=$0
+            sub(/^[[:space:]]*[^:]+:[[:space:]]*/, "", val)
+            gsub(/^["]|["][[:space:]]*$/, "", val)
+            print val
+            found=1
+            exit
+          }
+          END {
+            if (!found) {
+              if (def == "") def="DevOps"
+              print def
+            }
+          }
+        ' "$MAPPING_FILE")
+        echo "Mapped ${BASE_COMP} -> ${JIRA_COMPONENT} (from konflux-central mapping)"
+      fi
+
+      # ── Step 4: If build task did NOT fail, override to DevOps ──
+      if [ "$BUILD_TASK_STATUS" != "Failed" ]; then
+        echo "Build task status is '$BUILD_TASK_STATUS' (not Failed) — assigning to DevOps"
+        JIRA_COMPONENT="DevOps"
+      fi
+      echo "Jira component: $JIRA_COMPONENT"
+
+      # ── Step 5: Build labels for dedup ──
+      VERSION_LABEL="version:${RHOAI_VERSION}"
+      COMP_LABEL="component:${BASE_COMP}"
+      echo "Dedup labels: $COMP_LABEL, $VERSION_LABEL"
+
+      # ── Step 6: Build metadata YAML ──
+      cat > /tmp/build-failure-metadata.yaml <<METADATA_EOF
+      component: ${COMPONENT_NAME}
+      base_component: ${BASE_COMP}
+      display_name: ${DISPLAY_NAME}
+      repository: ${GIT_URL}
+      revision: ${REVISION}
+      revision_short: ${SHORT_REV}
+      pipelinerun: ${PIPELINE_RUN_NAME}
+      build_log_url: ${BUILD_URL}
+      commit_url: ${COMMIT_URL}
+      konflux_component_url: ${KONFLUX_COMPONENT_URL}
+      output_image: ${OUTPUT_IMAGE}
+      rhoai_version: ${RHOAI_VERSION}
+      target_branch: ${TARGET_BRANCH}
+      build_task_status: ${BUILD_TASK_STATUS}
+      jira_component: ${JIRA_COMPONENT}
+      namespace: ${PIPELINE_RUN_NAMESPACE}
+      timestamp: ${TIMESTAMP}
+      METADATA_EOF
+
+      # ── Step 7: Dry-run check ──
+      if [ "$DRY_RUN" = "true" ]; then
+        echo "DRY RUN — would search for existing issue with JQL:"
+        echo "  project = $JIRA_PROJECT AND labels = zstream-build-failure AND labels = \"$COMP_LABEL\" AND labels = \"$VERSION_LABEL\" AND status NOT IN (Done, Closed, Resolved)"
+        echo "Would create/update issue with:"
+        echo "  Summary: [Build Failure] ${DISPLAY_NAME:-$BASE_COMP} - ${TARGET_BRANCH}"
+        echo "  Component: $JIRA_COMPONENT"
+        echo "  Labels: rhoai-sustaining, zstream-build-failure, $COMP_LABEL, $VERSION_LABEL"
+        echo "  Build Log: $BUILD_URL"
+        echo "  Commit: $COMMIT_URL"
+        echo "  GitHub Repo: $GIT_URL"
+        echo "  Konflux Component: $KONFLUX_COMPONENT_URL"
+        cat /tmp/build-failure-metadata.yaml
+        printf "" > "$(results.jira-issue-key.path)"
+        printf "skipped" > "$(results.jira-action.path)"
+        exit 0
+      fi
+
+      # ── Step 8: Duplicate detection — one card per component per version ──
+      JQL="project = $JIRA_PROJECT AND labels = zstream-build-failure AND labels = \"$COMP_LABEL\" AND labels = \"$VERSION_LABEL\" AND status NOT IN (Done, Closed, Resolved)"
+      echo "Searching for existing issue: $JQL"
+
+      SEARCH_RESPONSE=$(curl -sf -X POST "${JIRA_BASE}/rest/api/2/search" \
+        -H "$AUTH_HEADER" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg jql "$JQL" '{jql: $jql, maxResults: 1, fields: ["key","status","summary"]}')" \
+      ) || {
+        echo "WARNING: Jira search failed — will attempt to create new issue"
+        SEARCH_RESPONSE='{"total":0}'
+      }
+
+      EXISTING_COUNT=$(echo "$SEARCH_RESPONSE" | jq -r '.total // 0')
+
+      if [ "$EXISTING_COUNT" -gt 0 ]; then
+        # ── Update existing issue with comment ──
+        EXISTING_KEY=$(echo "$SEARCH_RESPONSE" | jq -r '.issues[0].key')
+        echo "Found existing issue $EXISTING_KEY — adding comment"
+
+        COMMENT_BODY="New build failure detected at $TIMESTAMP\n\n\
+      *PipelineRun:* $PIPELINE_RUN_NAME\n\
+      *Revision:* [$SHORT_REV|$COMMIT_URL]\n\
+      *Build Task Status:* $BUILD_TASK_STATUS\n\n\
+      *Links:*\n\
+      - [Build Log|$BUILD_URL]\n\
+      - [Commit|$COMMIT_URL]\n\
+      - [GitHub Repo|$GIT_URL]\n\
+      - [Konflux Component|$KONFLUX_COMPONENT_URL]"
+
+        curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue/${EXISTING_KEY}/comment" \
+          -H "$AUTH_HEADER" \
+          -H "Content-Type: application/json" \
+          -d "$(jq -n --arg body "$COMMENT_BODY" '{body: $body}')" \
+          && echo "Comment added to $EXISTING_KEY" \
+          || echo "WARNING: Failed to add comment to $EXISTING_KEY"
+
+        curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue/${EXISTING_KEY}/attachments" \
+          -H "$AUTH_HEADER" \
+          -H "X-Atlassian-Token: no-check" \
+          -F "file=@/tmp/build-failure-metadata.yaml" \
+          > /dev/null 2>&1 || echo "WARNING: Failed to attach metadata to $EXISTING_KEY"
+
+        printf "%s" "$EXISTING_KEY" > "$(results.jira-issue-key.path)"
+        printf "updated" > "$(results.jira-action.path)"
+      else
+        # ── Create new issue ──
+        echo "No existing issue — creating new Jira issue"
+
+        ISSUE_SUMMARY="[Build Failure] ${DISPLAY_NAME:-$BASE_COMP} - ${TARGET_BRANCH}"
+
+        ISSUE_DESCRIPTION="Automated build failure detected by Konflux pipeline.\n\n\
+      *Component:* $COMPONENT_NAME\n\
+      *Repository:* [$REPO_NAME|$GIT_URL]\n\
+      *Branch:* $TARGET_BRANCH\n\
+      *RHOAI Version:* $RHOAI_VERSION\n\
+      *Build Task Status:* $BUILD_TASK_STATUS\n\n\
+      *Links:*\n\
+      - [Build Log|$BUILD_URL] (PipelineRun logs)\n\
+      - [Commit|$COMMIT_URL] (triggering commit)\n\
+      - [GitHub Repo|$GIT_URL] (source repository)\n\
+      - [Konflux Component|$KONFLUX_COMPONENT_URL] (component page)\n\n\
+      See attached build-failure-metadata.yaml for structured data."
+
+        CREATE_PAYLOAD=$(jq -n \
+          --arg project "$JIRA_PROJECT" \
+          --arg summary "$ISSUE_SUMMARY" \
+          --arg description "$ISSUE_DESCRIPTION" \
+          --arg comp_label "$COMP_LABEL" \
+          --arg version_label "$VERSION_LABEL" \
+          --arg jira_component "$JIRA_COMPONENT" \
+          '{
+            fields: {
+              project: {key: $project},
+              summary: $summary,
+              description: $description,
+              issuetype: {name: "Bug"},
+              labels: ["rhoai-sustaining", "zstream-build-failure", $comp_label, $version_label],
+              components: [{name: $jira_component}]
+            }
+          }')
+
+        CREATE_RESPONSE=$(curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue" \
+          -H "$AUTH_HEADER" \
+          -H "Content-Type: application/json" \
+          -d "$CREATE_PAYLOAD" \
+        ) || {
+          echo "ERROR: Failed to create Jira issue"
+          printf "" > "$(results.jira-issue-key.path)"
+          printf "skipped" > "$(results.jira-action.path)"
+          exit 0
+        }
+
+        NEW_KEY=$(echo "$CREATE_RESPONSE" | jq -r '.key')
+        echo "Created Jira issue: $NEW_KEY"
+
+        curl -sf -X POST "${JIRA_BASE}/rest/api/2/issue/${NEW_KEY}/attachments" \
+          -H "$AUTH_HEADER" \
+          -H "X-Atlassian-Token: no-check" \
+          -F "file=@/tmp/build-failure-metadata.yaml" \
+          > /dev/null 2>&1 || echo "WARNING: Failed to attach metadata to $NEW_KEY"
+
+        printf "%s" "$NEW_KEY" > "$(results.jira-issue-key.path)"
+        printf "created" > "$(results.jira-action.path)"
+      fi
+
+      echo "create-jira-on-build-failure complete"
