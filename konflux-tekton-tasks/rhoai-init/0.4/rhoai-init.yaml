@@ -1,0 +1,424 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: rhoai-init
+spec:
+  params:
+  - name: expected-cluster
+    type: string
+    default: ""
+  - name: build-type
+    description: FBC build type. It can be one of 'nightly', 'stage', or 'ci'.
+    type: string
+    default: ""
+  - default: ''
+    description: RHOAI version of the form X.Y.Z or X.Y.Z-suffix (e.g., 3.2.1 or 3.4.0-ea.1). Optional for PR pipelines.
+    name: rhoai-version
+    type: string
+  - name: image-output
+    description: Fully qualified output image (e.g., quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3)
+    type: string
+    default: ""
+  - name: additional-tags
+    description: Additional image tags that will be published (must be validated with the primary tag)
+    type: array
+    default: []
+  results:
+  - description: Notification text to be posted to slack
+    name: slack-message-failure-text
+  - description: Skip slack message
+    name: skip-slack-message
+  - description: cpe id for the built image
+    name: cpe-id
+  - description: Image registry (e.g., quay.io)
+    name: image-registry
+  - description: Image namespace/organization (e.g., rhoai)
+    name: image-namespace
+  - description: Image name without tag (e.g., odh-trustyai-nemo-guardrails-server-rhel9)
+    name: image-name
+  - description: Image tag (e.g., rhoai-3.3)
+    name: image-tag
+  - description: Image name without rhel suffix (e.g., odh-trustyai-nemo-guardrails-server)
+    name: image-name-without-rhel-suffix
+  - description: Konflux component name (e.g., odh-trustyai-nemo-guardrails-server-v3-3)
+    name: konflux-component-name
+  - description: Human-readable display name (e.g., Odh Trustyai Nemo Guardrails Server)
+    name: display-name
+  steps:
+  - image: registry.access.redhat.com/ubi9/ubi:latest
+    name: rhoai-init
+    env:
+    - name: slack_message
+      valueFrom:
+        secretKeyRef:
+          name: rhoai-konflux-secret
+          key: slack-component-failure-notification
+    - name: target_branch
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['build.appstudio.redhat.com/target_branch']
+    - name: EXPECTED_CLUSTER
+      value: $(params.expected-cluster)
+    - name: BUILD_TYPE
+      value: $(params.build-type)
+    - name: RHOAI_VERSION
+      value: $(params.rhoai-version)
+    - name: IMAGE_OUTPUT
+      value: $(params.image-output)
+    - name: BUILD_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/log-url']
+    - name: SHA_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/sha-url']
+    - name: SUMMARY_ANNOTATIONS
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['results.tekton.dev/recordSummaryAnnotations']
+    - name: KONFLUX_COMPONENT_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.labels['appstudio.openshift.io/component']
+    - name: PAC_EVENT_TYPE
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/event-type']
+    - name: GOVERNING_REPO_URL
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.annotations['pipelinesascode.tekton.dev/repo-url']
+    - name: ADDITIONAL_TAGS
+      value: $(params.additional-tags[*])
+    script: |
+      echo "----- DEBUG INFORMATION -----"
+      echo "Build URL: $BUILD_URL"
+      echo "SHA URL: $SHA_URL"
+      echo "Target Branch: $target_branch"
+      echo "Summary Annotations: $SUMMARY_ANNOTATIONS"
+      echo "Build Type: $BUILD_TYPE"
+      echo "RHOAI Version: $RHOAI_VERSION"
+      echo "Image Output: $IMAGE_OUTPUT"
+      echo "Expected Cluster: $EXPECTED_CLUSTER"
+      echo "Konflux Component Name: $KONFLUX_COMPONENT_NAME"
+
+      # Check if this is a pull request pipeline
+      is_pull_request=false
+      if [[ "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request"' || "$SUMMARY_ANNOTATIONS" =~ '"eventType":"pull_request_labeled"' || "$SUMMARY_ANNOTATIONS" =~ "pull_request-id" ]]; then
+        is_pull_request=true
+        echo "Pull request pipeline detected"
+      fi
+
+      # Fail if required parameters are not provided
+      # rhoai-version is optional for PR pipelines
+      if [[ -z "$RHOAI_VERSION" && "$is_pull_request" == "false" ]]; then
+        echo "ERROR: RHOAI version is required but was not provided"
+        exit 1
+      fi
+
+      if [[ -z "$IMAGE_OUTPUT" ]]; then
+        echo "ERROR: Image output is required but was not provided"
+        exit 1
+      fi
+
+      # Quay tagging safeguards (RHOAIENG-97056) — logic mirrored in scripts/validate-quay-tagging.sh
+      TARGET_BRANCH="$target_branch"
+      # Quay publication safeguards for rhoai-init (RHOAIENG-97056).
+      # Sourced by unit tests; the same logic is embedded in rhoai-init 0.4.
+
+      readonly RELEASE_TAG_REGEX='^rhoai-[0-9]+\.[0-9]+(-ea\.[0-9]+)?$'
+      readonly RELEASE_BRANCH_REGEX='^rhoai-[0-9]+\.[0-9]+(-ea\.[0-9]+)?$'
+      readonly RHDS_GITHUB_ORG='red-hat-data-services'
+
+      fail_validation() {
+        echo "ERROR: Quay tagging safeguard violated: $1" >&2
+        exit 1
+      }
+
+      fail_missing_context() {
+        echo "ERROR: Quay tagging safeguard: missing or malformed required context: $1" >&2
+        exit 1
+      }
+
+      is_release_tag() {
+        [[ "$1" =~ $RELEASE_TAG_REGEX ]]
+      }
+
+      is_release_branch() {
+        [[ "$1" =~ $RELEASE_BRANCH_REGEX ]]
+      }
+
+      normalize_github_repo_url() {
+        local url="${1%/}"
+        url="${url%.git}"
+        url="${url#https://}"
+        url="${url#http://}"
+        url="${url#github.com/}"
+        url="${url#www.github.com/}"
+        echo "$url"
+      }
+
+      parse_image_reference() {
+        local image_ref="$1"
+        local registry path_with_tag image_path
+
+        registry="${image_ref%%/*}"
+        if [[ "$registry" == "$image_ref" || -z "$registry" ]]; then
+          fail_missing_context "image reference must include a registry and path (got: ${image_ref})"
+        fi
+
+        path_with_tag="${image_ref#*/}"
+        if [[ "$path_with_tag" == *":"* ]]; then
+          IMAGE_REGISTRY="$registry"
+          IMAGE_PATH="${path_with_tag%:*}"
+          IMAGE_TAG="${path_with_tag##*:}"
+        else
+          IMAGE_REGISTRY="$registry"
+          IMAGE_PATH="$path_with_tag"
+          IMAGE_TAG=""
+        fi
+
+        IMAGE_NAME="${IMAGE_PATH##*/}"
+        IMAGE_NAMESPACE="${IMAGE_PATH%/*}"
+        if [[ "$IMAGE_NAMESPACE" == "$IMAGE_PATH" ]]; then
+          IMAGE_NAMESPACE=""
+        fi
+      }
+
+      publishes_to_rhoai_quay_namespace() {
+        [[ "${IMAGE_REGISTRY}" == "quay.io" && "${IMAGE_NAMESPACE}" == "rhoai" ]]
+      }
+
+      collect_publication_tags() {
+        PUBLICATION_TAGS=()
+        if [[ -n "${IMAGE_TAG}" ]]; then
+          PUBLICATION_TAGS+=("${IMAGE_TAG}")
+        fi
+        if [[ -n "${ADDITIONAL_TAGS:-}" ]]; then
+          # Tekton array params expand to a whitespace-separated list in rhoai-init.
+          local -a extra=()
+          read -r -a extra <<< "${ADDITIONAL_TAGS}"
+          local tag
+          for tag in "${extra[@]}"; do
+            [[ -n "$tag" ]] && PUBLICATION_TAGS+=("$tag")
+          done
+        fi
+      }
+
+      validate_quay_tagging() {
+        local event_type="${PAC_EVENT_TYPE:-}"
+        local target_branch="${TARGET_BRANCH:-}"
+        local governing_repo_url="${GOVERNING_REPO_URL:-}"
+        local image_output="${IMAGE_OUTPUT:-}"
+
+        if [[ -z "$event_type" ]]; then
+          fail_missing_context "event type (pipelinesascode.tekton.dev/event-type)"
+        fi
+        if [[ -z "$target_branch" ]]; then
+          fail_missing_context "target branch (build.appstudio.redhat.com/target_branch)"
+        fi
+        if [[ -z "$governing_repo_url" ]]; then
+          fail_missing_context "governing repository URL (pipelinesascode.tekton.dev/repo-url)"
+        fi
+        if [[ -z "$image_output" ]]; then
+          fail_missing_context "primary image output (image-output parameter)"
+        fi
+
+        if [[ "$event_type" != "pull_request" && "$event_type" != "push" ]]; then
+          fail_missing_context "unsupported event type '${event_type}'"
+        fi
+
+        parse_image_reference "$image_output"
+        collect_publication_tags
+
+        if [[ ${#PUBLICATION_TAGS[@]} -eq 0 ]]; then
+          fail_missing_context "at least one publication tag (primary image tag or additional-tags)"
+        fi
+
+        local governing_slug
+        governing_slug="$(normalize_github_repo_url "$governing_repo_url")"
+        local governing_org="${governing_slug%%/*}"
+        local is_rhds=false
+        if [[ "$governing_org" == "$RHDS_GITHUB_ORG" ]]; then
+          is_rhds=true
+        fi
+
+        if publishes_to_rhoai_quay_namespace && [[ "$is_rhds" == "false" ]]; then
+          fail_validation "non-RHDS governing repository '${governing_slug}' cannot publish to quay.io/rhoai (event=${event_type}, branch=${target_branch}, image=${image_output})"
+        fi
+
+        local tag
+        for tag in "${PUBLICATION_TAGS[@]}"; do
+          if [[ "$event_type" == "pull_request" ]] && is_release_tag "$tag"; then
+            fail_validation "pull request builds must not publish release tag '${tag}' (event=${event_type}, branch=${target_branch}, governing_repo=${governing_slug})"
+          fi
+
+          if [[ "$event_type" == "push" && "$target_branch" == "main" ]] && is_release_tag "$tag"; then
+            fail_validation "main-branch push builds must not publish release tag '${tag}' (branch=${target_branch}, governing_repo=${governing_slug})"
+          fi
+
+          if [[ "$event_type" == "push" ]] && is_release_tag "$tag"; then
+            if ! is_release_branch "$target_branch"; then
+              fail_validation "release tag '${tag}' is only allowed on release branches matching ${RELEASE_BRANCH_REGEX} (branch=${target_branch})"
+            fi
+            if [[ "$tag" != "$target_branch" ]]; then
+              fail_validation "release tag '${tag}' must match release branch '${target_branch}' (governing_repo=${governing_slug})"
+            fi
+          fi
+        done
+
+        echo "Quay tagging safeguards passed (event=${event_type}, branch=${target_branch}, governing_repo=${governing_slug}, tags=${PUBLICATION_TAGS[*]})"
+      }
+
+      validate_quay_tagging
+
+      pipelinerun_name=$(echo $BUILD_URL | sed 's|http.*/||')
+      echo "Pipelinerun Name: $pipelinerun_name"
+
+      # Function to compare semantic versions
+      # returns true (0) if $1 >= $2
+      semver_ge() {
+          # Strip pre-release suffix (e.g., "3.4.0-ea.1" becomes "3.4.0")
+          local v1="${1%%-*}"
+          local v2="${2%%-*}"
+
+          # We append ".0.0" to ensure at least three components (x.y.z) exist.
+          # This normalizes both versions ($1 and $2) to x.y.z format for comparison.
+          # We read four variables (x1, y1, z1, extra) to ensure x1, y1 and z1 only captures the x, y and z,
+          # and the dummy variable (extra) captures the extra trailing ".0" parts.
+          IFS='.' read -r x1 y1 z1 extra <<< "${v1}.0.0"
+          IFS='.' read -r x2 y2 z2 extra <<< "${v2}.0.0"
+
+          echo "Comparing versions: $1 (normalized to x1=$x1, y1=$y1, z1=$z1) and $2 (normalized to x2=$x2, y2=$y2, z2=$z2)"
+
+          if (( x1 > x2 )); then return 0; fi
+          if (( x1 < x2 )); then return 1; fi
+
+          if (( y1 > y2 )); then return 0; fi
+          if (( y1 < y2 )); then return 1; fi
+
+          if (( z1 >= z2 )); then return 0; fi
+
+          return 1
+      }
+
+      # No need to set CPE ID for pull request builds
+      if [[ "$is_pull_request" == "false" ]]; then
+
+        # All RHOAI versions 2.20 and above use RHEL 9
+        # Determine rhel_version based on semantic comparison with 2.20
+        if semver_ge "$RHOAI_VERSION" "2.20"; then
+            rhel_version=9
+        else
+            rhel_version=8
+        fi
+
+        # Parse RHOAI version into x, y, z components for CPE ID
+        # Strip pre-release suffix first (e.g., "3.4.0-ea.1" becomes "3.4.0")
+        clean_version="${RHOAI_VERSION%%-*}"
+        IFS='.' read -r x y z extra <<< "${clean_version}.0.0"
+
+        # Form the CPE identifier
+        cpe_id="cpe:/a:redhat:openshift_ai:${x}.${y}::el${rhel_version}"
+      else
+        cpe_id=""
+      fi
+
+      echo "CPE ID: $cpe_id"
+      echo -n "${cpe_id}" > "$(results.cpe-id.path)"
+
+      # Extract image registry, namespace, name and tag from the image-output parameter
+      # Supports both 2-level and 3-level paths:
+      #   quay.io/rhoai/image-name:tag -> registry=quay.io, namespace=rhoai, name=image-name
+      #   quay.io/redhat-user-workloads/rhoai-tenant/image-name:tag -> registry=quay.io, namespace=redhat-user-workloads/rhoai-tenant, name=image-name
+      echo "----- PARSING IMAGE OUTPUT -----"
+
+      # Extract registry (first part before the first /)
+      image_registry=$(echo "$IMAGE_OUTPUT" | cut -d'/' -f1)
+
+      # Remove registry to get the rest (namespace/path/image:tag)
+      image_path_with_tag="${IMAGE_OUTPUT#*/}"
+
+      # Split off the tag first (everything after the last :)
+      if [[ "$image_path_with_tag" == *":"* ]]; then
+        image_path=$(echo "$image_path_with_tag" | rev | cut -d':' -f2- | rev)
+        image_tag=$(echo "$image_path_with_tag" | rev | cut -d':' -f1 | rev)
+      else
+        image_path="$image_path_with_tag"
+        image_tag=""
+      fi
+
+      # Extract image name (last component of the path)
+      image_name=$(echo "$image_path" | rev | cut -d'/' -f1 | rev)
+
+      # Extract namespace (everything before the image name)
+      image_namespace=$(echo "$image_path" | rev | cut -d'/' -f2- | rev)
+
+      echo "Image Registry: $image_registry"
+      echo "Image Namespace: $image_namespace"
+      echo "Image Name: $image_name"
+      echo "Image Tag: $image_tag"
+
+      # Derive additional values from image_name
+      # image_name_without_rhel_suffix: Remove -rhel{N} suffix from anywhere in image_name
+      image_name_without_rhel_suffix=$(echo "$image_name" | sed 's/-rhel[0-9]*//g')
+
+      # display_name: Convert image_name_without_rhel_suffix to human-readable display name
+      # Replace hyphens with spaces, capitalize first letter of each word, keep ODH uppercase
+      display_name=$(echo "$image_name_without_rhel_suffix" | tr '-' ' ' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) tolower(substr($i,2)); print}' | sed 's/\bOdh\b/ODH/g')
+
+      echo "Image Name Without RHEL Suffix: $image_name_without_rhel_suffix"
+      echo "Display Name: $display_name"
+
+      echo -n "${image_registry}" > "$(results.image-registry.path)"
+      echo -n "${image_namespace}" > "$(results.image-namespace.path)"
+      echo -n "${image_name}" > "$(results.image-name.path)"
+      echo -n "${image_tag}" > "$(results.image-tag.path)"
+      echo -n "${image_name_without_rhel_suffix}" > "$(results.image-name-without-rhel-suffix.path)"
+      echo -n "${KONFLUX_COMPONENT_NAME}" > "$(results.konflux-component-name.path)"
+      echo -n "${display_name}" > "$(results.display-name.path)"
+      
+      # Skip slack message if expected cluster does not match
+      CLUSTER=$( echo "$BUILD_URL" | grep -oE 'stone-pro?d-[a-z0-9]+')
+      echo "Expected Cluster: $EXPECTED_CLUSTER"
+      echo "Actual Cluster: $CLUSTER"
+      if [[ -n "$EXPECTED_CLUSTER" && "$EXPECTED_CLUSTER" != "$CLUSTER" ]]; then
+        echo "Build URL does not match expected cluster $CLUSTER."
+        echo -n "true" > "$(results.skip-slack-message.path)"
+      else
+        echo -n "false" > "$(results.skip-slack-message.path)"
+      fi
+
+      build_time="$(date +%Y-%m-%dT%H:%M:%S)"
+
+      slack_message=${slack_message/__BUILD__URL__/$BUILD_URL}
+      slack_message=${slack_message/__PIPELINERUN__NAME__/$pipelinerun_name}
+      slack_message=${slack_message/__BUILD__TIME__/$build_time}
+
+      # Don't send a slack message for pull request pipelines
+      if [[ "$is_pull_request" == "true" ]]; then
+        echo "pull request pipeline detected, skipping slack message"
+        echo -n "true" > "$(results.skip-slack-message.path)"
+      fi
+
+      # Tag @rhoai-releng for stage FBCF build failures
+      if [[ "$BUILD_TYPE" == "stage" ]]; then
+        alertEmoji=":actual_rotating_light:"
+        slack_message=${slack_message/:alert:/$alertEmoji}
+        # The "!" in <!subteam^S09SZP9J34M|rhoai-releng> causes Bash history expansion errors
+        set +H  # disable history expansion
+        slack_message=$(echo -e "${slack_message}\nCC - <!subteam^S09SZP9J34M|rhoai-releng>")
+        set -H  # re-enable history expansion
+      fi
+
+      if [[ "$image_namespace" == "rhoai-private" ]]; then
+        echo "Embargoed build target detected. Not sending slack message"
+        # Prod delivery repo is "rhoai" for both embargoed and non-embargoed builds
+        echo -n "rhoai" > "$(results.image-namespace.path)"
+        echo -n "true" > "$(results.skip-slack-message.path)"
+        exit 0
+      fi
+
+      echo -en "${slack_message}" > "$(results.slack-message-failure-text.path)"
+      echo "Slack Message: ${slack_message}"
