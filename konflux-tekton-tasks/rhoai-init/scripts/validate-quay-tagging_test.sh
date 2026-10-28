@@ -81,6 +81,24 @@ run_fail "RHDS PR additional EA tag" bash -c '
   validate_quay_tagging
 ' || failures=$((failures + 1))
 
+run_pass "RHDS PR multiple permitted additional tags" bash -c '
+  source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
+  PAC_EVENT_TYPE=pull_request TARGET_BRANCH=main
+  GOVERNING_REPO_URL=https://github.com/red-hat-data-services/kserve
+  IMAGE_OUTPUT=quay.io/rhoai/some-image-rhel9:on-pr-123
+  ADDITIONAL_TAGS="pr-snapshot-1 pr-snapshot-2"
+  validate_quay_tagging
+' || failures=$((failures + 1))
+
+run_fail "RHDS PR multiple additional tags with release tag" bash -c '
+  source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
+  PAC_EVENT_TYPE=pull_request TARGET_BRANCH=main
+  GOVERNING_REPO_URL=https://github.com/red-hat-data-services/kserve
+  IMAGE_OUTPUT=quay.io/rhoai/some-image-rhel9:on-pr-123
+  ADDITIONAL_TAGS="pr-snapshot-1 rhoai-3.6"
+  validate_quay_tagging
+' || failures=$((failures + 1))
+
 run_pass "RHDS release push matching tag" base_rhds_release_push validate_quay_tagging || failures=$((failures + 1))
 
 run_pass "RHDS EA release push matching tag" bash -c '

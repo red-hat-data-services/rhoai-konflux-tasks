@@ -8,7 +8,7 @@
 | Governing repository | `pipelinesascode.tekton.dev/repo-url` | Target repository for PAC (fork PRs keep RHDS target URL; `source-repo-url` is the fork clone source and is not used for authorization) |
 | Build branch | `build.appstudio.redhat.com/target_branch` | Matches release branch names such as `rhoai-3.6` and `rhoai-3.6-ea.1` |
 | Primary publication image | Task param `image-output` (pipeline `output-image`) | Parsed into registry, namespace, name, and tag |
-| Additional publication tags | Task param `additional-tags` (pipeline `additional-tags`) | Tag strings only; validated with the same rules as the primary tag |
+| Additional publication tags | Task param `additional-tags` (pipeline `additional-tags`) | Forwarded via step `args` (`$(params.additional-tags[*])`) because Tekton does not expand array params in `env.value`; assembled as `ADDITIONAL_TAGS` in the script before validation |
 
 ## Execution order
 
