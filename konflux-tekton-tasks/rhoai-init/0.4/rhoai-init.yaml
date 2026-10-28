@@ -89,9 +89,12 @@ spec:
       valueFrom:
         fieldRef:
           fieldPath: metadata.annotations['pipelinesascode.tekton.dev/repo-url']
-    - name: ADDITIONAL_TAGS
-      value: $(params.additional-tags[*])
+    # Array params are not expanded in env.value; pass tags as step args (see evaluate-scan-results).
+    args:
+    - $(params.additional-tags[*])
     script: |
+      ADDITIONAL_TAGS="$*"
+
       echo "----- DEBUG INFORMATION -----"
       echo "Build URL: $BUILD_URL"
       echo "SHA URL: $SHA_URL"
