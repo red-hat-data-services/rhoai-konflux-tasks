@@ -24,6 +24,10 @@ is_release_branch() {
   [[ "$1" =~ $RELEASE_BRANCH_REGEX ]]
 }
 
+is_push_like_event() {
+  [[ "$1" == "push" || "$1" == "incoming" ]]
+}
+
 normalize_github_repo_url() {
   local url="${1%/}"
   url="${url%.git}"
@@ -100,7 +104,7 @@ validate_quay_tagging() {
     fail_missing_context "primary image output (image-output parameter)"
   fi
 
-  if [[ "$event_type" != "pull_request" && "$event_type" != "push" ]]; then
+  if [[ "$event_type" != "pull_request" ]] && ! is_push_like_event "$event_type"; then
     fail_missing_context "unsupported event type '${event_type}'"
   fi
 
@@ -129,11 +133,11 @@ validate_quay_tagging() {
       fail_validation "pull request builds must not publish release tag '${tag}' (event=${event_type}, branch=${target_branch}, governing_repo=${governing_slug})"
     fi
 
-    if [[ "$event_type" == "push" && "$target_branch" == "main" ]] && is_release_tag "$tag"; then
+    if is_push_like_event "$event_type" && [[ "$target_branch" == "main" ]] && is_release_tag "$tag"; then
       fail_validation "main-branch push builds must not publish release tag '${tag}' (branch=${target_branch}, governing_repo=${governing_slug})"
     fi
 
-    if [[ "$event_type" == "push" ]] && is_release_tag "$tag"; then
+    if is_push_like_event "$event_type" && is_release_tag "$tag"; then
       if ! is_release_branch "$target_branch"; then
         fail_validation "release tag '${tag}' is only allowed on release branches matching ${RELEASE_BRANCH_REGEX} (branch=${target_branch})"
       fi
