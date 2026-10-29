@@ -101,6 +101,15 @@ run_fail "RHDS PR multiple additional tags with release tag" bash -c '
 
 run_pass "RHDS release push matching tag" base_rhds_release_push validate_quay_tagging || failures=$((failures + 1))
 
+run_pass "RHDS release incoming (nudge) matching tag" bash -c '
+  source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
+  PAC_EVENT_TYPE=incoming TARGET_BRANCH=rhoai-3.6
+  GOVERNING_REPO_URL=https://github.com/red-hat-data-services/distributed-workloads.git
+  IMAGE_OUTPUT=quay.io/rhoai/odh-th-torch-rocm-py312-rhel9:rhoai-3.6
+  ADDITIONAL_TAGS="rhoai-3.6-deadbeef"
+  validate_quay_tagging
+' || failures=$((failures + 1))
+
 run_pass "RHDS EA release push matching tag" bash -c '
   source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
   PAC_EVENT_TYPE=push TARGET_BRANCH=rhoai-3.6-ea.1
