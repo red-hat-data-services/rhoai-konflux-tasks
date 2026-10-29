@@ -110,6 +110,22 @@ run_pass "RHDS release incoming (nudge) matching tag" bash -c '
   validate_quay_tagging
 ' || failures=$((failures + 1))
 
+run_pass "RHDS PR on-comment (/build-konflux) on-pr tag" bash -c '
+  source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
+  PAC_EVENT_TYPE=on-comment TARGET_BRANCH=main
+  GOVERNING_REPO_URL=https://github.com/red-hat-data-services/llama-stack-provider-trustyai-garak.git
+  IMAGE_OUTPUT=quay.io/rhoai/odh-trustyai-garak-lls-provider-dsp-rhel9:on-pr-736
+  validate_quay_tagging
+' || failures=$((failures + 1))
+
+run_fail "on-comment with release tag" bash -c '
+  source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
+  PAC_EVENT_TYPE=on-comment TARGET_BRANCH=main
+  GOVERNING_REPO_URL=https://github.com/red-hat-data-services/llama-stack-provider-trustyai-garak.git
+  IMAGE_OUTPUT=quay.io/rhoai/odh-trustyai-garak-lls-provider-dsp-rhel9:rhoai-3.6
+  validate_quay_tagging
+' || failures=$((failures + 1))
+
 run_pass "RHDS EA release push matching tag" bash -c '
   source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
   PAC_EVENT_TYPE=push TARGET_BRANCH=rhoai-3.6-ea.1

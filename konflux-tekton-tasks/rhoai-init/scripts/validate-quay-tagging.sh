@@ -28,6 +28,10 @@ is_push_like_event() {
   [[ "$1" == "push" || "$1" == "incoming" ]]
 }
 
+is_pull_request_like_event() {
+  [[ "$1" == "pull_request" || "$1" == "pull_request_labeled" || "$1" == "on-comment" || "$1" == "retest-comment" || "$1" == "test-comment" ]]
+}
+
 normalize_github_repo_url() {
   local url="${1%/}"
   url="${url%.git}"
@@ -104,7 +108,7 @@ validate_quay_tagging() {
     fail_missing_context "primary image output (image-output parameter)"
   fi
 
-  if [[ "$event_type" != "pull_request" ]] && ! is_push_like_event "$event_type"; then
+  if ! is_pull_request_like_event "$event_type" && ! is_push_like_event "$event_type"; then
     fail_missing_context "unsupported event type '${event_type}'"
   fi
 
@@ -129,7 +133,7 @@ validate_quay_tagging() {
 
   local tag
   for tag in "${PUBLICATION_TAGS[@]}"; do
-    if [[ "$event_type" == "pull_request" ]] && is_release_tag "$tag"; then
+    if is_pull_request_like_event "$event_type" && is_release_tag "$tag"; then
       fail_validation "pull request builds must not publish release tag '${tag}' (event=${event_type}, branch=${target_branch}, governing_repo=${governing_slug})"
     fi
 

@@ -4,7 +4,7 @@
 
 | Input | Source | Notes |
 | --- | --- | --- |
-| Event type (`pull_request` / `push` / `incoming`) | PipelineRun annotation `pipelinesascode.tekton.dev/event-type` | `incoming` is Konflux build nudge / operator-driven rebuild; validated with the same publication rules as `push`. Also mirrored in `results.tekton.dev/recordSummaryAnnotations` (`eventType`) for legacy detection in 0.1 slack/CPE logic |
+| Event type (PR-like / push-like) | PipelineRun annotation `pipelinesascode.tekton.dev/event-type` | **Push-like** (`push`, `incoming`): release publication rules. **PR-like** (`pull_request`, `pull_request_labeled`, `on-comment`, `retest-comment`, `test-comment`): no release tags to `quay.io/rhoai`. `on-comment` is PaC for `/build-konflux` and similar comment triggers. Also mirrored in `results.tekton.dev/recordSummaryAnnotations` (`eventType`) for legacy slack/CPE logic in rhoai-init. |
 | Governing repository | `pipelinesascode.tekton.dev/repo-url` | Target repository for PAC (fork PRs keep RHDS target URL; `source-repo-url` is the fork clone source and is not used for authorization) |
 | Build branch | `build.appstudio.redhat.com/target_branch` | Matches release branch names such as `rhoai-3.6` and `rhoai-3.6-ea.1` |
 | Primary publication image | Task param `image-output` (pipeline `output-image`) | Parsed into registry, namespace, name, and tag |
