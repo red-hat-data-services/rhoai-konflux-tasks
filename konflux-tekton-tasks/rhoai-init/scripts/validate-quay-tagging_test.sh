@@ -126,6 +126,14 @@ run_fail "on-comment with release tag" bash -c '
   validate_quay_tagging
 ' || failures=$((failures + 1))
 
+run_pass "RHDS PR retest-all-comment on-pr tag" bash -c '
+  source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
+  PAC_EVENT_TYPE=retest-all-comment TARGET_BRANCH=stable
+  GOVERNING_REPO_URL=https://github.com/red-hat-data-services/odh-dashboard.git
+  IMAGE_OUTPUT=quay.io/rhoai/odh-core-bff-rhel9:on-pr-2696
+  validate_quay_tagging
+' || failures=$((failures + 1))
+
 run_pass "RHDS EA release push matching tag" bash -c '
   source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
   PAC_EVENT_TYPE=push TARGET_BRANCH=rhoai-3.6-ea.1

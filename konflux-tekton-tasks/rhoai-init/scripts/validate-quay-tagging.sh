@@ -29,7 +29,7 @@ is_push_like_event() {
 }
 
 is_pull_request_like_event() {
-  [[ "$1" == "pull_request" || "$1" == "pull_request_labeled" || "$1" == "on-comment" || "$1" == "retest-comment" || "$1" == "test-comment" ]]
+  [[ "$1" == "pull_request" || "$1" == "pull_request_labeled" || "$1" == "on-comment" || "$1" == "retest-comment" || "$1" == "retest-all-comment" || "$1" == "test-comment" ]]
 }
 
 normalize_github_repo_url() {
