@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Event type (PR-like / push-like) | PipelineRun annotation `pipelinesascode.tekton.dev/event-type` | **Push-like** (`push`, `incoming`): release publication rules. **PR-like** (`pull_request`, `pull_request_labeled`, `on-comment`, `retest-comment`, `retest-all-comment`, `test-comment`): no release tags to `quay.io/rhoai`. Comment triggers include `/build-konflux` (`on-comment`) and PaC retest comments (`retest-comment`, `retest-all-comment`). Also mirrored in `results.tekton.dev/recordSummaryAnnotations` (`eventType`) for legacy slack/CPE logic in rhoai-init. |
 | Governing repository | `pipelinesascode.tekton.dev/repo-url` | Target repository for PAC (fork PRs keep RHDS target URL; `source-repo-url` is the fork clone source and is not used for authorization) |
-| Build branch | `build.appstudio.redhat.com/target_branch` | Matches release branch names such as `rhoai-3.6` and `rhoai-3.6-ea.1` |
+| Build branch | `build.appstudio.redhat.com/target_branch` | Matches release branch names such as `rhoai-3.6`, `rhoai-2.25.13`, and their `-ea.N` variants. Release tags must match the branch exactly |
 | Primary publication image | Task param `image-output` (pipeline `output-image`) | Parsed into registry, namespace, name, and tag |
 | Additional publication tags | Task param `additional-tags` (pipeline `additional-tags`) | Forwarded via step `args` (`$(params.additional-tags[*])`) because Tekton does not expand array params in `env.value`; assembled as `ADDITIONAL_TAGS` in the script before validation |
 
