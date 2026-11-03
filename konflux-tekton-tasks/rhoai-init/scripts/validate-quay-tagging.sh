@@ -2,8 +2,8 @@
 # Quay publication safeguards for rhoai-init (RHOAIENG-97056).
 # Sourced by unit tests; the same logic is embedded in rhoai-init 0.4.
 
-readonly RELEASE_TAG_REGEX='^rhoai-[0-9]+\.[0-9]+(-ea\.[0-9]+)?$'
-readonly RELEASE_BRANCH_REGEX='^rhoai-[0-9]+\.[0-9]+(-ea\.[0-9]+)?$'
+readonly RELEASE_TAG_REGEX='^rhoai-[0-9]+\.[0-9]+(\.[0-9]+)?(-ea\.[0-9]+)?$'
+readonly RELEASE_BRANCH_REGEX='^rhoai-[0-9]+\.[0-9]+(\.[0-9]+)?(-ea\.[0-9]+)?$'
 readonly RHDS_GITHUB_ORG='red-hat-data-services'
 
 fail_validation() {

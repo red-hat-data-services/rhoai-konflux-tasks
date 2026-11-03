@@ -256,6 +256,37 @@ run_fail "missing event type" bash -c '
   validate_quay_tagging
 ' || failures=$((failures + 1))
 
+# Patch releases must follow the same publication safeguards as minor releases.
+patch_release_case() {
+  base_rhds_release_push
+  PAC_EVENT_TYPE="$1"
+  TARGET_BRANCH="$2"
+  IMAGE_OUTPUT="quay.io/rhoai/some-image-rhel9:$3"
+  ADDITIONAL_TAGS="${4:-}"
+  validate_quay_tagging
+}
+
+for release in rhoai-2.25.13 rhoai-2.25.13-ea.1; do
+  run_pass "release branch ${release}" is_release_branch "$release" || failures=$((failures + 1))
+  run_pass "release tag ${release}" is_release_tag "$release" || failures=$((failures + 1))
+  for event in push incoming; do
+    run_pass "${event} matching ${release}" patch_release_case "$event" "$release" "$release" || failures=$((failures + 1))
+    run_pass "${event} additional ${release}" patch_release_case "$event" "$release" snapshot "$release" || failures=$((failures + 1))
+    run_fail "${event} mismatched ${release}" patch_release_case "$event" rhoai-2.25.12 "$release" || failures=$((failures + 1))
+    run_fail "${event} minor branch with ${release}" patch_release_case "$event" rhoai-2.25 "$release" || failures=$((failures + 1))
+    run_fail "${event} main with ${release}" patch_release_case "$event" main "$release" || failures=$((failures + 1))
+  done
+  for event in pull_request pull_request_labeled on-comment retest-comment retest-all-comment test-comment; do
+    run_fail "${event} primary ${release}" patch_release_case "$event" "$release" "$release" || failures=$((failures + 1))
+    run_fail "${event} additional ${release}" patch_release_case "$event" "$release" on-pr-123 "$release" || failures=$((failures + 1))
+  done
+done
+
+for branch in rhoai-2.25. rhoai-2.25.x rhoai-2.25.13.1 rhoai-2.25.13-extra prefix-rhoai-2.25.13; do
+  run_fail "invalid release branch ${branch}" is_release_branch "$branch" || failures=$((failures + 1))
+  run_fail "invalid release tag ${branch}" is_release_tag "$branch" || failures=$((failures + 1))
+done
+
 if [[ "$failures" -gt 0 ]]; then
   echo "${failures} test(s) failed"
   exit 1
