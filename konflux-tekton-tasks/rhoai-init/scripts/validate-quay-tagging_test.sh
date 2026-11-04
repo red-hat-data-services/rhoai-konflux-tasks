@@ -282,6 +282,30 @@ for release in rhoai-2.25.13 rhoai-2.25.13-ea.1; do
   done
 done
 
+# Z-streams publish minor tags (rhoai-X.Y) from patch branches (rhoai-X.Y.Z).
+for event in push incoming; do
+  run_pass "${event} z-stream minor tag on patch branch" \
+    patch_release_case "$event" rhoai-2.25.13 rhoai-2.25 || failures=$((failures + 1))
+  run_pass "${event} z-stream minor tag as additional on patch branch" \
+    patch_release_case "$event" rhoai-2.25.13 snapshot rhoai-2.25 || failures=$((failures + 1))
+  run_pass "${event} z-stream EA minor tag on patch EA branch" \
+    patch_release_case "$event" rhoai-2.25.13-ea.1 rhoai-2.25-ea.1 || failures=$((failures + 1))
+  run_pass "${event} odh-operator z-stream case" bash -c '
+    source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
+    PAC_EVENT_TYPE='"${event}"'
+    TARGET_BRANCH=rhoai-2.25.13
+    GOVERNING_REPO_URL=https://github.com/red-hat-data-services/rhods-operator
+    IMAGE_OUTPUT=quay.io/rhoai/odh-rhel9-operator:rhoai-2.25
+    validate_quay_tagging
+  ' || failures=$((failures + 1))
+  run_fail "${event} z-stream wrong minor on patch branch" \
+    patch_release_case "$event" rhoai-2.25.13 rhoai-2.24 || failures=$((failures + 1))
+  run_fail "${event} z-stream GA tag on EA patch branch" \
+    patch_release_case "$event" rhoai-2.25.13-ea.1 rhoai-2.25 || failures=$((failures + 1))
+  run_fail "${event} z-stream EA tag on GA patch branch" \
+    patch_release_case "$event" rhoai-2.25.13 rhoai-2.25-ea.1 || failures=$((failures + 1))
+done
+
 for branch in rhoai-2.25. rhoai-2.25.x rhoai-2.25.13.1 rhoai-2.25.13-extra prefix-rhoai-2.25.13; do
   run_fail "invalid release branch ${branch}" is_release_branch "$branch" || failures=$((failures + 1))
   run_fail "invalid release tag ${branch}" is_release_tag "$branch" || failures=$((failures + 1))

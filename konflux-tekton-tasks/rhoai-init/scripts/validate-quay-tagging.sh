@@ -24,6 +24,35 @@ is_release_branch() {
   [[ "$1" =~ $RELEASE_BRANCH_REGEX ]]
 }
 
+# True when tag equals branch, or z-stream publishes minor tag rhoai-X.Y[-ea.N]
+# from patch branch rhoai-X.Y.Z[-ea.N] (same major.minor and EA suffix).
+release_tag_matches_branch() {
+  local tag="$1"
+  local branch="$2"
+
+  if [[ "$tag" == "$branch" ]]; then
+    return 0
+  fi
+
+  local tag_base="" tag_ea="" branch_base="" branch_ea=""
+  if [[ "$tag" =~ ^rhoai-([0-9]+\.[0-9]+)(-ea\.[0-9]+)?$ ]]; then
+    tag_base="${BASH_REMATCH[1]}"
+    tag_ea="${BASH_REMATCH[2]}"
+  else
+    return 1
+  fi
+
+  if [[ "$branch" =~ ^rhoai-([0-9]+\.[0-9]+)\.([0-9]+)(-ea\.[0-9]+)?$ ]]; then
+    branch_base="${BASH_REMATCH[1]}"
+    branch_ea="${BASH_REMATCH[3]}"
+    if [[ "$tag_base" == "$branch_base" && "$tag_ea" == "$branch_ea" ]]; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 is_push_like_event() {
   [[ "$1" == "push" || "$1" == "incoming" ]]
 }
@@ -145,8 +174,8 @@ validate_quay_tagging() {
       if ! is_release_branch "$target_branch"; then
         fail_validation "release tag '${tag}' is only allowed on release branches matching ${RELEASE_BRANCH_REGEX} (branch=${target_branch})"
       fi
-      if [[ "$tag" != "$target_branch" ]]; then
-        fail_validation "release tag '${tag}' must match release branch '${target_branch}' (governing_repo=${governing_slug})"
+      if ! release_tag_matches_branch "$tag" "$target_branch"; then
+        fail_validation "release tag '${tag}' must match release branch '${target_branch}' or its minor stream (rhoai-X.Y on rhoai-X.Y.Z) (governing_repo=${governing_slug})"
       fi
     fi
   done
