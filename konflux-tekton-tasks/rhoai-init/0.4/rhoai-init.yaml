@@ -346,12 +346,12 @@ spec:
       # No need to set CPE ID for pull request builds
       if [[ "$is_pull_request" == "false" ]]; then
 
-        # All RHOAI versions 2.20 and above use RHEL 9
-        # Determine rhel_version based on semantic comparison with 2.20
-        if semver_ge "$RHOAI_VERSION" "2.20"; then
-            rhel_version=9
-        else
-            rhel_version=8
+        # Parse RHEL version from image output (e.g., quay.io/rhoai/odh-foo-rhel9:tag -> 9)
+        rhel_version=$(echo "$IMAGE_OUTPUT" | sed -n 's/.*-rhel\([0-9][0-9]*\).*/\1/p' | head -1)
+        if [[ -z "$rhel_version" ]]; then
+            echo "ERROR: Could not parse RHEL version from IMAGE_OUTPUT: $IMAGE_OUTPUT"
+            echo "Expected image name to contain -rhel<N> suffix (e.g., -rhel8, -rhel9, -rhel10)"
+            exit 1
         fi
 
         # Parse RHOAI version into x, y, z components for CPE ID
