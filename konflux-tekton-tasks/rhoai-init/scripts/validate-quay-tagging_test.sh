@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TASK_YAML="${SCRIPT_DIR}/../0.4/rhoai-init.yaml"
 # shellcheck source=validate-quay-tagging.sh
 source "${SCRIPT_DIR}/validate-quay-tagging.sh"
 
@@ -44,6 +45,49 @@ base_rhds_release_push() {
 }
 
 failures=0
+
+# Exercise the CPE logic embedded in the Tekton task with its own image parser.
+check_cpe() {
+  local image_output="$1"
+  local expected="$2"
+  local IMAGE_OUTPUT="$image_output" RHOAI_VERSION="${3:-3.6.2}" is_pull_request=false
+  local cpe_id=unset
+
+  source <(sed -n '/^      parse_image_reference() {$/,/^      }$/p' "$TASK_YAML" | sed 's/^      //')
+  parse_image_reference "$IMAGE_OUTPUT"
+  source <(sed -n '/^      # No need to set CPE ID for pull request builds$/,/^      echo "CPE ID: \$cpe_id"$/p' "$TASK_YAML" | sed 's/^      //')
+
+  [[ "$cpe_id" == "$expected" ]] || {
+    echo "Expected CPE ${expected}, got ${cpe_id}" >&2
+    return 1
+  }
+}
+
+run_pass "PR case: RHEL 9 dashboard" \
+  check_cpe quay.io/rhoai/odh-dashboard-rhel9:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
+run_pass "PR case: RHEL 8 dashboard" \
+  check_cpe quay.io/rhoai/odh-dashboard-rhel8:rhoai-2.16 'cpe:/a:redhat:openshift_ai:2.16::el8' 2.16 || failures=$((failures + 1))
+run_pass "PR case: RHEL 10 dashboard" \
+  check_cpe quay.io/rhoai/odh-dashboard-rhel10:rhoai-4.0 'cpe:/a:redhat:openshift_ai:4.0::el10' 4.0 || failures=$((failures + 1))
+run_fail "PR case: dashboard without RHEL suffix" \
+  check_cpe quay.io/rhoai/odh-dashboard:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
+run_pass "PR case: TrustyAI image" \
+  check_cpe quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
+
+run_pass "CPE uses image-name suffix, not tag" \
+  check_cpe quay.io/rhoai/some-image-rhel9:build-rhel10 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
+run_pass "CPE uses image-name suffix, not registry or namespace" \
+  check_cpe registry-rhel10.example/team-rhel10/some-image-rhel9:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
+run_pass "CPE accepts a two-digit RHEL suffix" \
+  check_cpe quay.io/rhoai/some-image-rhel10:build 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
+run_fail "CPE rejects RHEL suffix only in tag" \
+  check_cpe quay.io/rhoai/some-image:build-rhel10 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
+run_fail "CPE rejects RHEL suffix only in namespace" \
+  check_cpe quay.io/team-rhel10/some-image:build 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
+run_fail "CPE rejects RHEL suffix only in registry" \
+  check_cpe registry-rhel10.example/rhoai/some-image:build 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
+run_fail "CPE rejects a non-suffix RHEL marker" \
+  check_cpe quay.io/rhoai/some-image-rhel9-debug:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
 
 run_pass "RHDS PR on-pr tag" base_rhds_pr validate_quay_tagging || failures=$((failures + 1))
 
