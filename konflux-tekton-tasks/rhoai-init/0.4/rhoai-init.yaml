@@ -351,9 +351,15 @@ spec:
         if [[ "$IMAGE_NAME" =~ -rhel([0-9]+)(-|$) ]]; then
             rhel_version="${BASH_REMATCH[1]}"
         else
-            echo "ERROR: Could not parse RHEL version from image name: $IMAGE_NAME"
-            echo "Expected image name to contain -rhel<N> as a hyphen-delimited segment (e.g., -rhel9 or -rhel9-operator)"
-            exit 1
+            # Bundle images (e.g., odh-operator-bundle) don't have -rhel<N> in their name.
+            # Determine RHEL version from the RHOAI version instead.
+            if semver_ge "$RHOAI_VERSION" "3.8"; then
+                rhel_version=10
+            elif semver_ge "$RHOAI_VERSION" "2.20"; then
+                rhel_version=9
+            else
+                rhel_version=8
+            fi
         fi
 
         # Parse RHOAI version into x, y, z components for CPE ID
