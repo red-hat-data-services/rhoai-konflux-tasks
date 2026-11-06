@@ -70,7 +70,7 @@ run_pass "PR case: RHEL 8 dashboard" \
   check_cpe quay.io/rhoai/odh-dashboard-rhel8:rhoai-2.16 'cpe:/a:redhat:openshift_ai:2.16::el8' 2.16 || failures=$((failures + 1))
 run_pass "PR case: RHEL 10 dashboard" \
   check_cpe quay.io/rhoai/odh-dashboard-rhel10:rhoai-4.0 'cpe:/a:redhat:openshift_ai:4.0::el10' 4.0 || failures=$((failures + 1))
-run_pass "PR case: dashboard without RHEL suffix" \
+run_fail "PR case: dashboard without RHEL suffix" \
   check_cpe quay.io/rhoai/odh-dashboard:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
 run_pass "Bundle image: RHEL 8 for RHOAI < 2.20" \
   check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-2.16 'cpe:/a:redhat:openshift_ai:2.16::el8' 2.16 || failures=$((failures + 1))
@@ -103,7 +103,7 @@ run_fail "CPE rejects RHEL suffix only in registry" \
   check_cpe registry-rhel10.example/rhoai/some-image:build 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
 run_pass "CPE accepts a hyphen-delimited RHEL marker within the image name" \
   check_cpe quay.io/rhoai/some-image-rhel9-debug:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
-run_pass "CPE falls back to version-based RHEL for marker without trailing delimiter" \
+run_fail "CPE rejects a RHEL marker without a trailing delimiter" \
   check_cpe quay.io/rhoai/some-image-rhel9debug:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
 
 run_pass "RHDS PR on-pr tag" base_rhds_pr validate_quay_tagging || failures=$((failures + 1))
