@@ -55,6 +55,7 @@ check_cpe() {
 
   source <(sed -n '/^      parse_image_reference() {$/,/^      }$/p' "$TASK_YAML" | sed 's/^      //')
   parse_image_reference "$IMAGE_OUTPUT"
+  source <(sed -n '/^      semver_ge() {$/,/^      }$/p' "$TASK_YAML" | sed 's/^      //')
   source <(sed -n '/^      # No need to set CPE ID for pull request builds$/,/^      echo "CPE ID: \$cpe_id"$/p' "$TASK_YAML" | sed 's/^      //')
 
   [[ "$cpe_id" == "$expected" ]] || {
@@ -69,8 +70,18 @@ run_pass "PR case: RHEL 8 dashboard" \
   check_cpe quay.io/rhoai/odh-dashboard-rhel8:rhoai-2.16 'cpe:/a:redhat:openshift_ai:2.16::el8' 2.16 || failures=$((failures + 1))
 run_pass "PR case: RHEL 10 dashboard" \
   check_cpe quay.io/rhoai/odh-dashboard-rhel10:rhoai-4.0 'cpe:/a:redhat:openshift_ai:4.0::el10' 4.0 || failures=$((failures + 1))
-run_fail "PR case: dashboard without RHEL suffix" \
+run_pass "PR case: dashboard without RHEL suffix" \
   check_cpe quay.io/rhoai/odh-dashboard:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
+run_pass "Bundle image: RHEL 8 for RHOAI < 2.20" \
+  check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-2.16 'cpe:/a:redhat:openshift_ai:2.16::el8' 2.16 || failures=$((failures + 1))
+run_pass "Bundle image: RHEL 9 for RHOAI >= 2.20" \
+  check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-2.25 'cpe:/a:redhat:openshift_ai:2.25::el9' 2.25 || failures=$((failures + 1))
+run_pass "Bundle image: RHEL 9 at RHOAI 3.7 (< 3.8)" \
+  check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-3.7 'cpe:/a:redhat:openshift_ai:3.7::el9' 3.7 || failures=$((failures + 1))
+run_pass "Bundle image: RHEL 10 for RHOAI >= 3.8" \
+  check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-3.8 'cpe:/a:redhat:openshift_ai:3.8::el10' 3.8 || failures=$((failures + 1))
+run_pass "Bundle image: RHEL 10 for RHOAI 4.0" \
+  check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-4.0 'cpe:/a:redhat:openshift_ai:4.0::el10' 4.0 || failures=$((failures + 1))
 run_pass "PR case: TrustyAI image" \
   check_cpe quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
 run_pass "CPE accepts the operator image name" \
@@ -92,7 +103,7 @@ run_fail "CPE rejects RHEL suffix only in registry" \
   check_cpe registry-rhel10.example/rhoai/some-image:build 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
 run_pass "CPE accepts a hyphen-delimited RHEL marker within the image name" \
   check_cpe quay.io/rhoai/some-image-rhel9-debug:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
-run_fail "CPE rejects a RHEL marker without a trailing delimiter" \
+run_pass "CPE falls back to version-based RHEL for marker without trailing delimiter" \
   check_cpe quay.io/rhoai/some-image-rhel9debug:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
 
 run_pass "RHDS PR on-pr tag" base_rhds_pr validate_quay_tagging || failures=$((failures + 1))
