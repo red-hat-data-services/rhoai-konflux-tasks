@@ -73,6 +73,10 @@ run_fail "PR case: dashboard without RHEL suffix" \
   check_cpe quay.io/rhoai/odh-dashboard:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
 run_pass "PR case: TrustyAI image" \
   check_cpe quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
+run_pass "CPE accepts the operator image name" \
+  check_cpe quay.io/rhoai/odh-rhel9-operator:rhoai-2.25 'cpe:/a:redhat:openshift_ai:2.25::el9' 2.25 || failures=$((failures + 1))
+run_pass "CPE uses the operator image name, not its tag" \
+  check_cpe quay.io/rhoai/odh-rhel9-operator:build-rhel10 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
 
 run_pass "CPE uses image-name suffix, not tag" \
   check_cpe quay.io/rhoai/some-image-rhel9:build-rhel10 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
@@ -86,8 +90,10 @@ run_fail "CPE rejects RHEL suffix only in namespace" \
   check_cpe quay.io/team-rhel10/some-image:build 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
 run_fail "CPE rejects RHEL suffix only in registry" \
   check_cpe registry-rhel10.example/rhoai/some-image:build 'cpe:/a:redhat:openshift_ai:3.6::el10' || failures=$((failures + 1))
-run_fail "CPE rejects a non-suffix RHEL marker" \
+run_pass "CPE accepts a hyphen-delimited RHEL marker within the image name" \
   check_cpe quay.io/rhoai/some-image-rhel9-debug:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
+run_fail "CPE rejects a RHEL marker without a trailing delimiter" \
+  check_cpe quay.io/rhoai/some-image-rhel9debug:build 'cpe:/a:redhat:openshift_ai:3.6::el9' || failures=$((failures + 1))
 
 run_pass "RHDS PR on-pr tag" base_rhds_pr validate_quay_tagging || failures=$((failures + 1))
 
