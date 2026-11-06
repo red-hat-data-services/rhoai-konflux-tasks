@@ -82,6 +82,14 @@ run_pass "Bundle image: RHEL 10 for RHOAI >= 3.8" \
   check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-3.8 'cpe:/a:redhat:openshift_ai:3.8::el10' 3.8 || failures=$((failures + 1))
 run_pass "Bundle image: RHEL 10 for RHOAI 4.0" \
   check_cpe quay.io/rhoai/odh-operator-bundle:rhoai-4.0 'cpe:/a:redhat:openshift_ai:4.0::el10' 4.0 || failures=$((failures + 1))
+run_pass "Chart image: RHEL 9 for RHOAI >= 2.20" \
+  check_cpe quay.io/rhoai/odh-dashboard-chart:rhoai-3.6 'cpe:/a:redhat:openshift_ai:3.6::el9' 3.6 || failures=$((failures + 1))
+run_pass "Chart image: RHEL 10 for RHOAI >= 3.8" \
+  check_cpe quay.io/rhoai/odh-dashboard-chart:rhoai-3.8 'cpe:/a:redhat:openshift_ai:3.8::el10' 3.8 || failures=$((failures + 1))
+run_pass "Fragment image: RHEL 9 for RHOAI >= 2.20" \
+  check_cpe quay.io/rhoai/odh-fragment-catalog:rhoai-3.6 'cpe:/a:redhat:openshift_ai:3.6::el9' 3.6 || failures=$((failures + 1))
+run_pass "Fragment image: RHEL 10 for RHOAI >= 3.8" \
+  check_cpe quay.io/rhoai/odh-fragment-catalog:rhoai-3.8 'cpe:/a:redhat:openshift_ai:3.8::el10' 3.8 || failures=$((failures + 1))
 run_pass "PR case: TrustyAI image" \
   check_cpe quay.io/rhoai/odh-trustyai-nemo-guardrails-server-rhel9:rhoai-3.3 'cpe:/a:redhat:openshift_ai:3.3::el9' 3.3 || failures=$((failures + 1))
 run_pass "CPE accepts the operator image name" \
