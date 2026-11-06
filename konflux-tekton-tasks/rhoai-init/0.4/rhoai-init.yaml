@@ -350,8 +350,8 @@ spec:
         # Parse a RHEL segment from the image name (e.g., odh-rhel9-operator -> 9)
         if [[ "$IMAGE_NAME" =~ -rhel([0-9]+)(-|$) ]]; then
             rhel_version="${BASH_REMATCH[1]}"
-        elif [[ "$IMAGE_NAME" == *bundle* ]]; then
-            # Bundle images (e.g., odh-operator-bundle) don't have -rhel<N> in their name.
+        elif [[ "$IMAGE_NAME" == *bundle* || "$IMAGE_NAME" == *chart* || "$IMAGE_NAME" == *fragment* ]]; then
+            # Some images (bundles, charts, fragments) don't have -rhel<N> in their name.
             # Determine RHEL version from the RHOAI version instead.
             if semver_ge "$RHOAI_VERSION" "3.8"; then
                 rhel_version=10
