@@ -267,6 +267,37 @@ run_pass "fork PR targeting RHDS" bash -c '
   validate_quay_tagging
 ' || failures=$((failures + 1))
 
+# Cover the temporary PoC exception using the centralized KubeRay PipelineRun's repo and tags.
+builds_pr_case() {
+  base_rhds_pr
+  PAC_EVENT_TYPE="$1"
+  GOVERNING_REPO_URL="${4:-https://github.com/rhoai-rhtap/rhoai-builds}"
+  IMAGE_OUTPUT="quay.io/rhoai/odh-kuberay-operator-controller-rhel9:$2"
+  ADDITIONAL_TAGS="${3:-}"
+  validate_quay_tagging
+}
+
+for event in pull_request pull_request_labeled on-comment retest-comment retest-all-comment test-comment; do
+  run_pass "builds ${event} KubeRay PR snapshot" \
+    builds_pr_case "$event" on-p01-pr-1 on-p01-pr-1 || failures=$((failures + 1))
+  for release in rhoai-3.6 rhoai-3.6-ea.1 rhoai-2.25.13 rhoai-2.25.13-ea.1; do
+    run_fail "builds ${event} primary ${release}" \
+      builds_pr_case "$event" "$release" || failures=$((failures + 1))
+    run_fail "builds ${event} additional ${release}" \
+      builds_pr_case "$event" on-p01-pr-1 "on-p01-pr-1 $release" || failures=$((failures + 1))
+  done
+done
+run_pass "builds PR normalized repository URL" \
+  builds_pr_case pull_request on-p01-pr-1 on-p01-pr-1 https://github.com/rhoai-rhtap/rhoai-builds.git/ || failures=$((failures + 1))
+for event in push incoming; do
+  run_fail "builds ${event} snapshot not authorized" \
+    builds_pr_case "$event" on-p01-pr-1 || failures=$((failures + 1))
+done
+for repo in rhoai-rhtap/another-repo rhoai-rhtap/rhoai-builds-other another-org/rhoai-builds; do
+  run_fail "builds PR exception excludes ${repo}" \
+    builds_pr_case pull_request on-p01-pr-1 "" "https://github.com/${repo}" || failures=$((failures + 1))
+done
+
 run_fail "non-RHDS PR to rhoai namespace" bash -c '
   source "'"${SCRIPT_DIR}"'/validate-quay-tagging.sh"
   PAC_EVENT_TYPE=pull_request TARGET_BRANCH=main

@@ -10,6 +10,12 @@
 | Primary publication image | Task param `image-output` (pipeline `output-image`) | Parsed into registry, namespace, name, and tag |
 | Additional publication tags | Task param `additional-tags` (pipeline `additional-tags`) | Forwarded via step `args` (`$(params.additional-tags[*])`) because Tekton does not expand array params in `env.value`; assembled as `ADDITIONAL_TAGS` in the script before validation |
 
+## Temporary proof-of-concept exception: centralized PR builds
+
+This is a **temporary exception** to support the `rhoai-rhtap/rhoai-builds` proof-of-concept effort, not a permanent expansion of publication authorization. Remove the exception when the proof of concept ends.
+
+The exact governing repository `rhoai-rhtap/rhoai-builds` may publish non-release tags to `quay.io/rhoai` for PR-like events, including comment/retest triggers. This supports centralized PipelineRuns such as the KubeRay controller PR build (`on-p01-pr-<number>` primary and additional tags). The exception does not authorize other repositories in `rhoai-rhtap`, push/incoming events, or release tags in either the primary image or `additional-tags`. The governing PaC repository remains the authorization source, not the cloned source repository.
+
 ## Execution order
 
 `rhoai-init` remains the first task in RHOAI container/FBC pipelines (`runBefore` clone/build). Safeguards run immediately after required parameters are present and **before** CPE derivation, Slack formatting, or any downstream task (including `init` / `buildah` / `apply-tags`).
