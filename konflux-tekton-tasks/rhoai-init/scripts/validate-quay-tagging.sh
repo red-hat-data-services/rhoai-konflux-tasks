@@ -156,8 +156,15 @@ validate_quay_tagging() {
     is_rhds=true
   fi
 
-  if publishes_to_rhoai_quay_namespace && [[ "$is_rhds" == "false" ]]; then
-    fail_validation "non-RHDS governing repository '${governing_slug}' cannot publish to quay.io/rhoai (event=${event_type}, branch=${target_branch}, image=${image_output})"
+  # TEMPORARY PoC exception: centralized builds may publish PR snapshots, never releases.
+  # Remove this exception when the rhoai-rhtap/rhoai-builds proof of concept ends.
+  local is_builds_pr=false
+  if [[ "$governing_slug" == "rhoai-rhtap/rhoai-builds" ]] && is_pull_request_like_event "$event_type"; then
+    is_builds_pr=true
+  fi
+
+  if publishes_to_rhoai_quay_namespace && [[ "$is_rhds" == "false" && "$is_builds_pr" == "false" ]]; then
+    fail_validation "non-RHDS governing repository '${governing_slug}' cannot publish to quay.io/rhoai outside the rhoai-rhtap/rhoai-builds PR exception (event=${event_type}, branch=${target_branch}, image=${image_output})"
   fi
 
   local tag
